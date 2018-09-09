@@ -3,6 +3,7 @@
 //
 // Author: Dustin Fast, 2018
 
+#define MAX_INT_DIGITS (19)  // Num digits in 64-bit int string representation
 
 // Given a null-terminated string, returns the length of that string.
 size_t str_len(char *arr) {
@@ -47,14 +48,6 @@ int str_writeln(char *arr, int fd) {
 }
 
 
-// Prints the given interger to the given file descriptor.
-// TODO: int str_iwrite(int n, int fd) {
-//     int digit_count = ...
-//     char buff[digit_count];
-//     str_write(buff, STDOUT);
-// }
-
-
 // Does integer to string conversion, setting *arr_out to the resuling_string.
 void itoa(int n, char *arr_out, int out_len) {
     int i = 0;
@@ -75,6 +68,14 @@ void itoa(int n, char *arr_out, int out_len) {
         i++;
     } while (n > 0 && i < out_len - 1);
     arr_out[i] = '\0';
+}
+
+
+// Prints the given interger to the given file descriptor, followed by a newline.
+int str_writei(int n, int fd) {
+    char arr[MAX_INT_DIGITS];
+    itoa(n, arr, MAX_INT_DIGITS);
+    str_writeln(arr, STDOUT_FILENO);
 }
 
 

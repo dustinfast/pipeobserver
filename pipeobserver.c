@@ -24,10 +24,10 @@
 
 #define USAGE ("./pipeobserver OUTFILE [ CMD1 ] [ CMD2 ]")
 
-struct command {
+typedef struct cmd_obj {
     char cmd[MAX_LEN];
     char args[MAX_LEN];
-};
+} command;
     
 // TODO: Func declarations
 
@@ -81,63 +81,56 @@ int parse_cmds(char **arr_in, char *arr_out, int in_len, int i, int j, int k) {
 // Starts the recursive CMD parse from the given command line argument vars.
 // Results in cmds populated with structs of type command.
 // Returns -1 on parse fail, else returns the number of commands in cmds.
-int get_cmds(int argc, char **argv, struct command *cmds) {
+int get_cmds(int argc, char **argv, command *cmds) {
     char *inner;                // I.e. "ls -lat" out of "[ ls -lat ]"
-    char *cmd;                  // I.e. "ls"
-    char *args;                 // I.e. "-lat"
+    char *cmd_str;              // I.e. "ls"
+    char *args_str;             // I.e. "-lat"
     int i = 2;                  // As in argv[i]. Note, starts at 3rd arg.
-    int result = 0;             // Return val. Success (>=0), or fail (-1).
+    int result_count = 0;       // Return val. Success (>=0), or fail (-1).
 
     // Process an arbitrary number of CMD args.
     // Expected form is: { '[', 'EXECUTABLE', 'ARGS', ']', '[', ... , ']' }
-    while (i < argc && result >= 0) {
-        // Get the "inner" portion of CMD arg
+    while (i < argc && result_count > -1) {
+        // Parse for the "inner" portion of CMD arg
         inner = malloc(0);
         i = parse_cmds(argv, inner, argc, i, 0, 0);
 
         // On parse fail
         if (i == -1) {
-            result = -1;
+            result_count = -1;
 
         // On parse success
         } else {
-            // Split CMD on executable/args and store resulting cmd in cmds
-            cmd = malloc(0);
-            args = malloc(0);
-            split_str(inner, cmd, args, " ");
+            // Split on executable/args
+            cmd_str = malloc(0);
+            args_str = malloc(0);
+            split_str(inner, cmd_str, args_str, " ");
 
-            str_writeln("Split:", STDOUT);
-            str_writeln(cmd, STDOUT);
-            str_writeln(args, STDOUT);
-
-            str_cpy(cmd, cmds->cmd, str_len(cmd));
-            str_cpy(args, cmds->args, str_len(args));
-            cmds++;
-            result++;
+            // Instantiate a new command and push ref to cmds
+            command cmd;
+            str_cpy(cmd_str, cmd.cmd, str_len(cmd_str));
+            str_cpy(args_str, cmd.args, str_len(args_str));
+            cmds[result_count] = cmd;
+            result_count++;
 
             str_writeln("Set:", STDOUT);
-            str_writeln(cmds->cmd, STDOUT);
-            str_writeln(cmds->args, STDOUT);
+            str_writeln(cmd.cmd, STDOUT);
+            str_writeln(cmd.args, STDOUT);
         }
+        free(cmd_str);
+        free(args_str);
     }
-
     free(inner);
-    free(cmd);
-    free(args);
-
-
-    printf("\nDone\n");
-
-    return result;
+    
+    return result_count;
 }
 
 
 // Main application driver
 int main(int argc, char **argv) {
-    int outfile;
-    struct command *commands;
-
-    // int p=(int*)calloc(2, sizeof(struct command));
+    command *commands;
+    int cmd_count = 0;
+    int out_fd;
 
     // Validate cmd line arg count
     if (argc < 8)
@@ -146,7 +139,7 @@ int main(int argc, char **argv) {
         // return -1;
 
         // debug
-        argc = 8;
+        argc = 13;
         argv[1] = "allfiles";
         argv[2] = "[";
         argv[3] = "ps";
@@ -156,26 +149,30 @@ int main(int argc, char **argv) {
         argv[7] = "grep";
         argv[8] = "dfast";
         argv[9] = "]";
+        argv[10] = "[";
+        argv[11] = "grep";
+        argv[12] = "dfast";
+        argv[13] = "]";
     }
 
-
     // Parse cmd line args for commands to run
-    commands = malloc(0);
-    if (get_cmds(argc, argv, commands) == -1) {
+    commands = malloc(MAX_LEN * sizeof(command));
+    cmd_count = get_cmds(argc, argv, commands);
+    if (cmd_count < 2) {
         write_err("ERROR: Invalid argument format. Ensure matched braces.");
         free(commands);
         return -1;
     }
 
-    // Open outfile (denoted by argv[1])
-    outfile = open(argv[1], O_CREAT | O_WRONLY | O_TRUNC, 00644);
-    if (outfile < 0) {
-        write_err("ERROR: Failed to open output file.");
+    // Open the output file denoted by argv[1]
+    out_fd = open(argv[1], O_CREAT | O_WRONLY | O_TRUNC, 00644);
+    if (out_fd < 0) {
+        write_err("ERROR: Failed to open output file. Ensure proper format.");
         free(commands);
         return -1;
     }
 
-    close(outfile);
+    close(out_fd);
     free(commands);
 
     return 0;
@@ -252,7 +249,7 @@ int main(int argc, char **argv) {
     //     printf("\nParent1: Done\n");
     // }
 
-    // // close(outfile);
+    // // close(out_fd);
     // free(cmd1);
     // free(cmd2);
     // free(curr_cmd);
