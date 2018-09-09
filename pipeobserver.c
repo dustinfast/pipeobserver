@@ -135,11 +135,7 @@ int parse_args(char **arr_in, char *arr_out, int i, int j, int level, int max_i)
 // Main application driver
 int main(int argc, char **argv) {
     char *outfile;
-    char *cmd1 = malloc(0);
-    char *cmd2 = malloc(0);
-    char *curr_cmd = malloc(0);
-    char *curr_args = malloc(0);
-    
+    int outfile_fd;
 
     str_write("Pipe Observer - Pipes CMD1 output to CMD2 input, ", 0);
     str_write("storing piped data in OUTFILE.\n", 0);
@@ -164,26 +160,23 @@ int main(int argc, char **argv) {
     }
     outfile = argv[1];
 
-    // debug
-    // char str[ARR_SIZE];
-    // for (int i = 0; i < argc; i++)
-    // {
-    //     str_write("Arg #", 0);
-    //     itoa(i, str, ARR_SIZE);
-    //     str_write(str, 0);
-    //     str_write(": ", 0);
-    //     str_write(argv[i], 0);
-    //     str_write("\n", 0);
-    // }
-
-    // Validate outfile name
-    if (str_len(outfile) <= 0)
-    {
+    // Validate and open outfile
+    if (str_len(outfile) <= 0) {
         str_write("ERROR: Output file length cannot be zero.\n", 0);
         return -1;
     }
 
+    outfile_fd = open(outfile, O_CREAT | O_WRONLY | O_TRUNC, 00644);
+    if (outfile_fd < 0) {
+        str_write("ERROR: Failed to open OUTFILE.\n", 0);
+        return -1;
+    }
+
     // Parse/validate commands
+    char *cmd1 = malloc(0);
+    char *cmd2 = malloc(0);
+    char *curr_cmd = malloc(0);
+    char *curr_args = malloc(0);
     int bracket_level = 0;
     int i = 2;      // argv index (note starting w/3rd arg)
     int j = 0;      // cmd index
@@ -199,7 +192,6 @@ int main(int argc, char **argv) {
 
     // Open pipe. Note: pipe[0] = read end, pipe[1] = write end
     int pipe_fds[2];
-
     if (pipe(pipe_fds) != 0) {
         str_write("ERROR: Could not open pipe.", 0);
         perror(argv[0]);
@@ -228,25 +220,29 @@ int main(int argc, char **argv) {
         execvp(argv[0], exec_args);
         close(pipe_fds[1]);
         printf("Child1: Exiting.\n");
-        // TODO: Cleanup?
+        
+        free(curr_cmd);
+        free(curr_args);
         exit(0);
-    
-    // Parent
+
     } else {
         // Parent...
         printf("In parent1. Waiting for child %d", (int) child1_pid);
+        printf("\n");
         waitpid(child1_pid, NULL, 0);
         
         close(pipe_fds[1]);
         
         while (read(pipe_fds[0], arr, BUF_SIZE) > 0)  {
             // write_str(arr, pipe_fds[0]):
-            printf("%s", arr);
+            // printf("%s", arr);
         }
 
         pid_t child2_pid = fork();
         if (child2_pid == 0) {
             printf("In child2, Pid is: %d\n", (int) getpid());
+            printf("\n");
+
             split_str(cmd2, curr_cmd, curr_args, " ");
             str_write("Running ", 0);
             str_write(curr_cmd, 0);
@@ -264,6 +260,7 @@ int main(int argc, char **argv) {
         printf("\nParent1: Done\n");
     }
 
+    close(outfile);
     free(cmd1);
     free(cmd2);
     free(curr_cmd);
@@ -271,13 +268,6 @@ int main(int argc, char **argv) {
     str_write("Done.\n", 0);
 
     // A: Ensure executable w/'open'
-
-
-    // C: Create first child process of self. Child connects it's stdout to 
-    //  the write end of pipe (inherited from parent), and closing the other end
-    //  using dup2 and close
-    // D: Child then replaces itself w/process corresponding w/first executable.
-    //   to run using execvp, passing args appropriately
 
     // E: Create 2nd child process. 2nd child connects its stdin to read end of pipe
     // and closes the other end.
