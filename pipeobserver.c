@@ -197,30 +197,6 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    // debug
-    // str_write("\n", 0);
-    // str_write(cmd1, 0);
-    // str_write("\n", 0);
-    // str_write(cmd2, 0);
-    // str_write("\n", 0);
-
-
-    // debug
-    split_str(cmd1, curr_cmd, curr_args, " ");
-    str_write("Running ", 0);
-    str_write(curr_cmd, 0);
-    str_write(" ", 0);
-    str_write(curr_args, 0);
-    str_write("\n", 0);
-
-    //debug
-    split_str(cmd2, curr_cmd, curr_args, " ");
-    str_write("Running ", 0);
-    str_write(curr_cmd, 0);
-    str_write(" ", 0);
-    str_write(curr_args, 0);
-    str_write("\n", 0);
-
     // Open pipe. Note: pipe[0] = read end, pipe[1] = write end
     int pipe_fds[2];
 
@@ -231,42 +207,62 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    // // Child1
-    // pid_t child1, child2;
-    // char buf[BUF_SIZE];
-    // if ((child1 = fork()) == 0) {
-    //     printf("I am the child. My pid is %d.\n", (int) getpid());
+    // Spawn child proc 1
+    pid_t child1_pid = fork();
+    char arr[BUF_SIZE];
+    if (child1_pid == 0) {
+        // Child 1...
+        printf("In child1 . Pid is %d.\n", (int) getpid());
 
-    //     close(pipe_fds[0]);
-    //     dup2(pipe_fds[1], 1); // redirect stdout
+        split_str(cmd1, curr_cmd, curr_args, " ");
+        str_write("Running ", 0);
+        str_write(curr_cmd, 0);
+        str_write(" ", 0);
+        str_write(curr_args, 0);
+        str_write("\n", 0);
 
-    //     char* arguments[] = {"cat", "fork.c", NULL};
-    //     execvp(argv[0], arguments);
-    //     sleep(1);
-    //     printf("Child: Dying now.\n");
-    //     exit(0);
+        close(pipe_fds[0]);
+        dup2(pipe_fds[1], STDOUT_FILENO);   // redirect stdout
+
+        char* exec_args[] = {curr_cmd, curr_args, NULL};
+        execvp(argv[0], exec_args);
+        close(pipe_fds[1]);
+        printf("Child1: Exiting.\n");
+        // TODO: Cleanup?
+        exit(0);
     
-    // // Parent
-    // } else {
-    //     printf("Parent: My childs PID is %d. Waiting for child.\n", (int) child1);
-    //     waitpid(child1, NULL, 0);
+    // Parent
+    } else {
+        // Parent...
+        printf("In parent1. Waiting for child %d", (int) child1_pid);
+        waitpid(child1_pid, NULL, 0);
         
-    //     close(pipe_fds[1]);
-    //     while (read(pipe_fds[0], buf, BUF_SIZE) > 0) 
-    //         printf("%s", buf);
+        close(pipe_fds[1]);
         
+        while (read(pipe_fds[0], arr, BUF_SIZE) > 0)  {
+            // write_str(arr, pipe_fds[0]):
+            printf("%s", arr);
+        }
 
-    //     // child2 = fork();
-    //     // if (fork() == 0) {
-    //     //     printf("I am child C2, my pid is: %d\n", getpid());
-    //     //     exit(0);
-    //     // }
+        pid_t child2_pid = fork();
+        if (child2_pid == 0) {
+            printf("In child2, Pid is: %d\n", (int) getpid());
+            split_str(cmd2, curr_cmd, curr_args, " ");
+            str_write("Running ", 0);
+            str_write(curr_cmd, 0);
+            str_write(" ", 0);
+            str_write(curr_args, 0);
+            str_write("\n", 0);
+            printf("Child2: Exiting.\n");
 
-    //     free(cmd1);
-    //     free(cmd2);
-
-    //     exit(0);
-    // }
+            exit(0);
+        } else {
+            printf("In parent2 . Waiting for child %d", (int) child2_pid);
+            waitpid(child2_pid, NULL, 0);
+            printf("\nParent2: Done\n");
+        }
+        printf("\nParent1: Done\n");
+    }
 
     free(cmd1);
     free(cmd2);
