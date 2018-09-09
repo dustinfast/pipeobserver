@@ -1,5 +1,5 @@
 // A collection of string handlers, implemented using only system calls.
-// A string in this context is defined as a '\0'. terminated arrays of chars.
+// A string in this context is defined as a '\0'. terminated array of chars.
 //
 // Author: Dustin Fast, 2018
 
@@ -39,6 +39,7 @@ int str_write(char *arr, int fd) {
     }
 }
 
+
 // Writes the given string to the given file descriptor, followed by a newline.
 int str_writeln(char *arr, int fd) {
     str_write(arr, fd);
@@ -46,8 +47,16 @@ int str_writeln(char *arr, int fd) {
 }
 
 
+// Prints the given interger to the given file descriptor.
+// TODO: int str_iwrite(int n, int fd) {
+//     int digit_count = ...
+//     char buff[digit_count];
+//     str_write(buff, STDOUT);
+// }
+
+
 // Does integer to string conversion, setting *arr_out to the resuling_string.
-void itoa(int n, char *arr_out, int arr_len) {
+void itoa(int n, char *arr_out, int out_len) {
     int i = 0;
     int dec_val;
 
@@ -64,21 +73,25 @@ void itoa(int n, char *arr_out, int arr_len) {
         n = n / 10;
         arr_out[i] = '0' +  dec_val;
         i++;
-    } while (n > 0 && i < arr_len - 1);
+    } while (n > 0 && i < out_len - 1);
     arr_out[i] = '\0';
 }
 
 
 // Copies the given number of bytes from arr_in to arr_out.
+// Assumes arr_out is of sufficient size.
 void str_cpy(char *arr_in, char *arr_out, int count) {
+    // TODO: Trim mem alloc
     for (int i = 0; i < count; i++) {
             arr_out[i] = arr_in[i];
     }
 }
 
+
 // Append given number of bytes from arr_in to arr_out, increasing size(arr_out)
 // by that many bytes. Must also give current size of arr_out as out_len.
-// Returns the new length of arr_out.
+// Assumes: arr_out addrss space is reallocatable w/ realloc().
+// Returns: The new length of arr_out.
 int str_append(char *arr_in, char *arr_out, int out_len, int count) {
     arr_out = realloc(arr_out, out_len + count);
     int j = out_len - 1;
@@ -89,10 +102,12 @@ int str_append(char *arr_in, char *arr_out, int out_len, int count) {
     }
 }
 
+
 // Splits the string given by arr_in in two on the first occurance of seperator.
-// Assumes arr_out1 and arr_out2 have a dynamically allocated size of 0.
-// Result: arr_out1 = string before seperator, arr_out2 = string after seperator.
-// Note: The seperator is left out of the resulting arr_out1 and arr_out2.
+// Assumes: arr_out1 and arr_out2 have a dynamically allocated size of 0.
+// Result: arr_out1 = arr_in[:seperator], arr_out2 = string[seperator+1:]
+// Note that the seperator is left out of the resulting arr_out1 and arr_out2.
+// If no seperator found, arr_out1 = arr_in and arr_out2 is empty.
 void split_str(char *arr_in, char *arr_out1, char *arr_out2, char *seperator) {
     int len = str_len(arr_in);
     char *curr = arr_out1;
@@ -107,6 +122,7 @@ void split_str(char *arr_in, char *arr_out1, char *arr_out2, char *seperator) {
 
         curr = realloc(curr, j + 1);
         str_cpy(&arr_in[i], &curr[j], 1);
+
         j++;
     }
 }
