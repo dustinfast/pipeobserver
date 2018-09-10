@@ -43,6 +43,29 @@ void debugcmd(char *label, command cmd) {
     str_write("\n", STDOUT);
 }
 
+// Helper function to connect read/write/close pipes.
+// Mode 1: replace old_in w/ pipe_fds[1]
+// Mode 2: replace old_out w/ pipe_fds[0]
+// Mode 3: Does both  mode 1 and mode 2.
+// old_in and/or old_out may be NULL, depending on mode.
+void connect_pipe(int mode, int *pipe_fds, int old_in, int old_out) {
+    switch(mode) {
+        case 1:
+            dup2(pipe_fds[1], old_out);
+            close(pipe_fds[1]);
+            break;
+        case 2:
+            dup2(pipe_fds[0], old_in);
+            close(pipe_fds[0]);
+            break;
+        case 3:
+            dup2(pipe_fds[1], old_out);
+            dup2(pipe_fds[0], old_in);
+            break;
+        default:
+            str_writeln("ERROR: Invalid mode passed to connect_pipe", STDERR);
+    }
+}
 
 // Forks and pipes output between the given CMDS, writing piped data to out_fd
 // TODO: Recursive
@@ -69,6 +92,10 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
         if (cmd1_pid == 0) {
             // In Child 1 ...
             debugcmd("Start cmd 1:", *cmd1);  // debug
+            // TODO: If not firstflag, connect stdin to pipe_read
+            close(out_fd);                 
+            char* exec_args[] = {cmd1->args, NULL};
+            execvp(cmd1->cmd, exec_args);
             exit(0);  // exit cmd1_pid
 
         } else {
