@@ -50,7 +50,7 @@ void debugcmd(char *label, command cmd) {
 // Piped data is copied to the given file desciptor out_fd.
 int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
     command *cmd1, *cmd2;
-    pid_t child1_pid, child2_pid, gchild_pid;
+    pid_t child1_pid, child2_pid, gchildA_pid, gchildB_pid;
     int top_pipe[2];
     int i = 0;
 
@@ -67,23 +67,23 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
         child1_pid = fork();
         if (child1_pid == 0) {
             /* In Child 1 ---------------------------------- */
-            debugcmd("Start cmd 1:", *cmd1);  // debug
+            debugcmd("Start child 1:", *cmd1);  // debug
             close(out_fd); 
                             
             // TODO: If not firstflag, connect stdin to pipe_read
 
             execvp(cmd1->exe, cmd1->args);
-            exit(0);  // exit child1_pid
+            exit(0);  // exit Child 1
 
         } else {
             /* In Parent -------------------------------------------- */            
             waitpid(child1_pid, NULL, 0);
-            // str_writeln("cmd1 done", STDOUT);  // debug
+            str_writeln("child 1 done", STDOUT);  // debug
 
             child2_pid = fork();
             if (child2_pid == 0) {
                 /* In Child 2 ------------------------------- */            
-                // str_writeln("Start tee:", STDOUT);  // debug
+                str_writeln("Start child 2:", STDOUT);  // debug
 
                 // TODO:
                 // new pipe
@@ -93,10 +93,10 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                 // and writing on stdout and the file using write.
                 close(out_fd); 
 
-                gchild_pid = fork();
-                if (gchild_pid != 0) {
-                    /* In Grandchild 1 ------------ */            
-                    debugcmd("Start cmd2:", *cmd2);  // debug  
+                gchildA_pid = fork();
+                if (gchildA_pid != 0) {
+                    /* In Grandchild A ------------ */            
+                    debugcmd("Start gchildA:", *cmd2);  // debug  
                     close(out_fd); 
 
 
@@ -106,13 +106,23 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                     // close out_fd
                     execvp(cmd2->exe, cmd2->args);
                     // If no more cmds, output to stdout, else to top_pipe_write          
-                    exit(0);  // exit gchild_pid
+                    exit(0);  // exit gchild1
 
                 } else {
-                    /* In Child 2 ---------------------------- */                                
-                    waitpid(gchild_pid, NULL, 0);
-                    // str_writeln("tee done", STDOUT);  // debug
-                    exit(0);  // exit child2_pid
+                    /* In Child 2 ---------------------------- */ 
+                    waitpid(gchildA_pid, NULL, 0);
+                    str_writeln("gchildA done", STDOUT);
+                    
+                    gchildB_pid = fork();
+                    if (gchildB_pid == 0) {
+                        // in grandchild B
+                        str_writeln("In gchildB", STDOUT);
+                        exit(0);
+                    } else {
+                        waitpid(gchildB_pid, NULL, 0);
+                        str_writeln("gchildB done", STDOUT);  // debug
+                        exit(0);  // exit Child 2
+                    }                              
                 }
 
             } else {
@@ -121,9 +131,9 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                 // str_writeln("Cmd 2 done.", STDOUT); // debug
 
                 close(top_pipe[0]);
-                close(top_pipe[0]);
-                // TODO: continue;
-                return i;  // debug
+                close(top_pipe[1]);
+                continue;
+                // return i;  // debug
             }
         }
     }
@@ -139,8 +149,8 @@ int main(int argc, char **argv) {
     int out_fd;
 
     // debug
-    // argc = 14;
-    argc= 9;
+    argc = 14;
+    // argc= 9;
     argv[1] = "allfiles";
     argv[2] = "[";
     argv[3] = "echo";
@@ -151,8 +161,8 @@ int main(int argc, char **argv) {
     argv[8] = "two";
     argv[9] = "]";
     argv[10] = "[";
-    argv[11] = "grep";
-    argv[12] = "dfast";
+    argv[11] = "echo";
+    argv[12] = "three";
     argv[13] = "]";
     outfile_name = argv[1];
 
