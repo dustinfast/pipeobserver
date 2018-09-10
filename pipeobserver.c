@@ -16,8 +16,6 @@
 
 #include "dstring.h"  // String function lib, uses syscalls only.
 
-
-// Constants
 #define MAX_LEN (8192)
 #define STDIN (STDIN_FILENO)
 #define STDOUT (STDOUT_FILENO)
@@ -25,7 +23,7 @@
 #define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ] ...")
 
 
-// Abstraction of a command and it's command line args.
+// Abstraction of a command and it's args.
 typedef struct cmd_obj {
     char exe[MAX_LEN];
     char *args[MAX_LEN];
@@ -43,7 +41,7 @@ void debugcmd(char *label, command cmd) {
     str_write("\n", STDOUT);
     str_writeln(label, STDOUT);
     str_writeln(cmd.exe, STDOUT);
-    str_writeln(cmd.args[1], STDOUT);
+    // str_writeln(cmd.args[1], STDOUT);
 }
 
 
@@ -51,7 +49,7 @@ void debugcmd(char *label, command cmd) {
 // Piped data is copied to the given file desciptor out_fd.
 int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
     command *cmd1, *cmd2;
-    pid_t cmd1_pid, tee_pid, cmd2_pid;
+    pid_t child1_pid, child2_pid, gchild_pid;
     int top_pipe[2];
     int i = 0;
 
@@ -65,26 +63,26 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
         cmd1 = &cmds[i++];
         cmd2 = &cmds[i++];
         
-        cmd1_pid = fork();
-        if (cmd1_pid == 0) {
-            // In Child 1 ...
+        child1_pid = fork();
+        if (child1_pid == 0) {
+            /* In Child 1 ---------------------------------- */
             debugcmd("Start cmd 1:", *cmd1);  // debug
             close(out_fd); 
                             
             // TODO: If not firstflag, connect stdin to pipe_read
 
             execvp(cmd1->exe, cmd1->args);
-            exit(0);  // exit cmd1_pid
+            exit(0);  // exit child1_pid
 
         } else {
-            // In Parent ...
-            waitpid(cmd1_pid, NULL, 0);
-            str_writeln("cmd1 done", STDOUT);  // debug
+            /* In Parent -------------------------------------------- */            
+            waitpid(child1_pid, NULL, 0);
+            // str_writeln("cmd1 done", STDOUT);  // debug
 
-            tee_pid = fork();
-            if (tee_pid == 0) {
-                // In tee_pid ...
-                str_writeln("Start tee:", STDOUT);  // debug
+            child2_pid = fork();
+            if (child2_pid == 0) {
+                /* In Child 2 ------------------------------- */            
+                // str_writeln("Start tee:", STDOUT);  // debug
 
                 // TODO:
                 // new pipe
@@ -94,9 +92,9 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                 // and writing on stdout and the file using write.
                 close(out_fd); 
 
-                cmd2_pid = fork();
-                if (cmd2_pid != 0) {
-                    // In GchlidA ...
+                gchild_pid = fork();
+                if (gchild_pid != 0) {
+                    /* In Grandchild 1 ------------ */            
                     debugcmd("Start cmd2:", *cmd2);  // debug  
                     close(out_fd); 
 
@@ -107,19 +105,19 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                     // close out_fd
                     execvp(cmd2->exe, cmd2->args);
                     // If no more cmds, output to stdout, else to top_pipe_write          
-                    exit(0);  // exit cmd2_pid
+                    exit(0);  // exit gchild_pid
 
                 } else {
-                    // In tee (as cmd2's parent) ...
-                    waitpid(cmd2_pid, NULL, 0);
-                    str_writeln("tee done", STDOUT);  // debug
-                    exit(0);  // exit tee_pid
+                    /* In Child 2 ---------------------------- */                                
+                    waitpid(gchild_pid, NULL, 0);
+                    // str_writeln("tee done", STDOUT);  // debug
+                    exit(0);  // exit child2_pid
                 }
 
             } else {
-                // In parent...
-                waitpid(tee_pid, NULL, 0);
-                str_writeln("Cmd 2 done.", STDOUT);
+                /* In Parent -------------------------------------------- */                            
+                waitpid(child2_pid, NULL, 0);
+                // str_writeln("Cmd 2 done.", STDOUT); // debug
 
                 close(top_pipe[0]);
                 close(top_pipe[0]);
@@ -204,7 +202,6 @@ int main(int argc, char **argv) {
     close(out_fd);
     free(commands);
 
-    // TODO: dynamically alloc commands arr
     // TODO: Verify no mem leak
 
     return 0;
