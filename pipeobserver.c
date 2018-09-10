@@ -41,6 +41,7 @@ void debugcmd(char *label, command cmd) {
     str_write("\n", STDOUT);
     str_writeln(label, STDOUT);
     str_writeln(cmd.exe, STDOUT);
+    // str_writeln(cmd.args[0], STDOUT);
     // str_writeln(cmd.args[1], STDOUT);
 }
 
@@ -163,8 +164,7 @@ int main(int argc, char **argv) {
     while (i < argc && cmd_count > -1) {
         // Get the next cmd from the recursive parser
         command cmd;
-        cmd.args[0] = "";  // args must start at index 1 for execvp
-        i = get_nextcmd(argv, argc, &cmd, i, 1, 0, 0);
+        i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
 
         // Set fail, else add cmd to commands
         if (i != -1) 
@@ -253,15 +253,12 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             // If executable name flag set, write cmd.cmd and unset flag.
             if (z) {
                 str_cpy(arr_in[i], cmd->exe, str_len(arr_in[i]));
+                cmd->args[j++] = arr_in[i];  // First arg is always cmd name
                 z = 0;
 
             // Else, its an arg.
             } else {
                 cmd->args[j++] = arr_in[i];
-                // str_writeln("test", STDOUT);
-                // str_cpy(arr_in[i], cmd->args[j++], str_len(arr_in[i]));
-                // str_writeln("test", STDOUT);
-
             }
     }
 
