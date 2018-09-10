@@ -38,99 +38,98 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
 void connect_pipe(int mode, int *pipe_fds, int old_in, int old_out);
 
 
-// For debug
+// For debug ouput
 void debugcmd(char *label, command cmd) {
     str_write("\n", STDOUT);
     str_writeln(label, STDOUT);
     str_writeln(cmd.exe, STDOUT);
-    str_writeln(cmd.args[0], STDOUT);
+    str_writeln(cmd.args[1], STDOUT);
 }
 
 
-// // Pipes output between the given CMDS which are executed as forks.
-// // Piped data is copied to the given file desciptor out_fd.
-// int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
-//     command *cmd1, *cmd2;
-//     pid_t cmd1_pid, tee_pid, cmd2_pid;
-//     int top_pipe[2];
-//     int i = 0;
+// Pipes output between the given CMDS which are executed as forks.
+// Piped data is copied to the given file desciptor out_fd.
+int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
+    command *cmd1, *cmd2;
+    pid_t cmd1_pid, tee_pid, cmd2_pid;
+    int top_pipe[2];
+    int i = 0;
 
-//     // Init top-level pipe
-//     if (pipe(top_pipe) != 0)
-//         return -1;
+    // Init top-level pipe
+    if (pipe(top_pipe) != 0)
+        return -1;
 
-//     // for cmd in cmds...
-//      while (i < cmd_count) {    
-//         // Determine the 2 cmds for this iteration
-//         cmd1 = &cmds[i++];
-//         cmd2 = &cmds[i++];
+    // for cmd in cmds...
+     while (i < cmd_count) {    
+        // Determine the 2 cmds for this iteration
+        cmd1 = &cmds[i++];
+        cmd2 = &cmds[i++];
         
-//         cmd1_pid = fork();
-//         if (cmd1_pid == 0) {
-//             // In Child 1 ...
-//             debugcmd("Start cmd 1:", *cmd1);  // debug
-//             close(out_fd); 
+        cmd1_pid = fork();
+        if (cmd1_pid == 0) {
+            // In Child 1 ...
+            debugcmd("Start cmd 1:", *cmd1);  // debug
+            close(out_fd); 
                             
-//             // TODO: If not firstflag, connect stdin to pipe_read
-//             char* exec_args[] = {cmd1->args, NULL};
-//             execvp(cmd1->exe, exec_args); // TODO: args not well-formed
+            // TODO: If not firstflag, connect stdin to pipe_read
 
-//             exit(0);  // exit cmd1_pid
+            execvp(cmd1->exe, cmd1->args);
+            exit(0);  // exit cmd1_pid
 
-//         } else {
-//             // In Parent ...
-//             waitpid(cmd1_pid, NULL, 0);
-//             str_writeln("cmd1 done", STDOUT);  // debug
+        } else {
+            // In Parent ...
+            waitpid(cmd1_pid, NULL, 0);
+            str_writeln("cmd1 done", STDOUT);  // debug
 
-//             tee_pid = fork();
-//             if (tee_pid == 0) {
-//                 // In tee_pid ...
-//                 str_writeln("Start tee:", STDOUT);  // debug
+            tee_pid = fork();
+            if (tee_pid == 0) {
+                // In tee_pid ...
+                str_writeln("Start tee:", STDOUT);  // debug
 
-//                 // TODO:
-//                 // new pipe
-//                 // connect stdout to NEW pipe_write.
-//                 // close NEW pipe read
-//                 // do "tee" on out_fd, reading on stdin w/read, 
-//                 // and writing on stdout and the file using write.
-//                 close(out_fd); 
+                // TODO:
+                // new pipe
+                // connect stdout to NEW pipe_write.
+                // close NEW pipe read
+                // do "tee" on out_fd, reading on stdin w/read, 
+                // and writing on stdout and the file using write.
+                close(out_fd); 
 
-//                 cmd2_pid = fork();
-//                 if (cmd2_pid != 0) {
-//                     // In GchlidA ...
-//                     debugcmd("Start cmd2:", *cmd2);  // debug  
-//                     close(out_fd); 
+                cmd2_pid = fork();
+                if (cmd2_pid != 0) {
+                    // In GchlidA ...
+                    debugcmd("Start cmd2:", *cmd2);  // debug  
+                    close(out_fd); 
 
 
-//                     // TODO:
-//                     // Connect std in to NEW pipe_read
-//                     // close write end
-//                     // close out_fd
-//                     // do execvp
-//                     // If no more cmds, output to stdout, else to top_pipe_write          
-//                     exit(0);  // exit cmd2_pid
+                    // TODO:
+                    // Connect std in to NEW pipe_read
+                    // close write end
+                    // close out_fd
+                    execvp(cmd2->exe, cmd2->args);
+                    // If no more cmds, output to stdout, else to top_pipe_write          
+                    exit(0);  // exit cmd2_pid
 
-//                 } else {
-//                     // In tee (as cmd2's parent) ...
-//                     waitpid(cmd2_pid, NULL, 0);
-//                     str_writeln("tee done", STDOUT);  // debug
-//                     exit(0);  // exit tee_pid
-//                 }
+                } else {
+                    // In tee (as cmd2's parent) ...
+                    waitpid(cmd2_pid, NULL, 0);
+                    str_writeln("tee done", STDOUT);  // debug
+                    exit(0);  // exit tee_pid
+                }
 
-//             } else {
-//                 // In parent...
-//                 waitpid(tee_pid, NULL, 0);
-//                 str_writeln("Cmd 2 done.", STDOUT);
+            } else {
+                // In parent...
+                waitpid(tee_pid, NULL, 0);
+                str_writeln("Cmd 2 done.", STDOUT);
 
-//                 close(top_pipe[0]);
-//                 close(top_pipe[0]);
-//                 // TODO: continue;
-//                 return i;  // debug
-//             }
-//         }
-//     }
-//     return i;
-// }
+                close(top_pipe[0]);
+                close(top_pipe[0]);
+                // TODO: continue;
+                return i;  // debug
+            }
+        }
+    }
+    return i;
+}
 
 
 // Main application driver
@@ -141,16 +140,16 @@ int main(int argc, char **argv) {
     int out_fd;
 
     // debug
-    argc = 14;
+    // argc = 14;
     argc= 9;
     argv[1] = "allfiles";
     argv[2] = "[";
-    argv[3] = "ps";
-    argv[4] = "aux";
+    argv[3] = "echo";
+    argv[4] = "one";
     argv[5] = "]";
     argv[6] = "[";
-    argv[7] = "grep";
-    argv[8] = "dfast";
+    argv[7] = "echo";
+    argv[8] = "two";
     argv[9] = "]";
     argv[10] = "[";
     argv[11] = "grep";
@@ -166,14 +165,14 @@ int main(int argc, char **argv) {
     while (i < argc && cmd_count > -1) {
         // Get the next cmd from the recursive parser
         command cmd;
-        i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
+        cmd.args[0] = "";  // args must start at index 1 for execvp
+        i = get_nextcmd(argv, argc, &cmd, i, 1, 0, 0);
 
         // Set fail, else add cmd to commands
-        if (i == -1) 
-            cmd_count = -1;
-        else 
+        if (i != -1) 
             commands[cmd_count++] = cmd;
-            debugcmd("Set:", cmd);  // debug
+        else 
+            cmd_count = -1;
     }
 
     // Ensure at least two commands
@@ -191,16 +190,16 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    // int results = fork_and_pipe(commands, cmd_count, out_fd);
-    // if(results > -1) {
-    //     str_write("Success! ", STDOUT);
-    //     str_iwrite(results, STDOUT);
-    //     str_write(" processes piped.\nUse 'cat ", STDOUT);
-    //     str_write(outfile_name, STDOUT);
-    //     str_writeln("' to view results.", STDOUT);
-    // } else {
-    //     write_err("ERROR: Failed during fork and pipe process.");
-    // } 
+    int results = fork_and_pipe(commands, cmd_count, out_fd);
+    if(results > -1) {
+        str_write("Success! ", STDOUT);
+        str_iwrite(results, STDOUT);
+        str_write(" processes piped.\nUse 'cat ", STDOUT);
+        str_write(outfile_name, STDOUT);
+        str_writeln("' to view results.", STDOUT);
+    } else {
+        write_err("ERROR: Failed during fork and pipe process.");
+    } 
 
     close(out_fd);
     free(commands);
@@ -240,9 +239,13 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             // If no first open bracket, unmatched bracket error
             if (k == 0)
                 return -1;
+
             // If at bracket level 1, it's our closing bracket, signaling done.
-            if (k == 1)
+            if (k == 1) {
+                cmd->args[j++] = '\0';  // Null terminate args list, for execvp
                 return ++i;
+            }
+
             // Else, it's an arg
             cmd->args[j++] = arr_in[i];
             
@@ -258,10 +261,14 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             // Else, its an arg.
             } else {
                 cmd->args[j++] = arr_in[i];
+                // str_writeln("test", STDOUT);
+                // str_cpy(arr_in[i], cmd->args[j++], str_len(arr_in[i]));
+                // str_writeln("test", STDOUT);
+
             }
     }
 
-    // Check for unexpected state
+    // Check for unexpected states
     if (k < 0 || (i > in_len && k > 0)) {
         write_err("DEBUG: Unexcepted error in get_nextcmd.");
         return -1;
