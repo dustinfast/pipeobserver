@@ -3,7 +3,7 @@
 // Usage: ./pipeobserver outfile [ process1 ] [ process2 ]
 // Example: ./pipeobserver outfile [ ps aux ] [ process2 ]
 // Example: ./pipobserver outfile [ echo [ Hello ] ] [ wc -l ]
-// NOTE: Unmatched brackets prohibited in cmd line args.
+// NOTE: Brackets in cmd line args must be matched. Ex: "[ hi ]]" is incorrect.
 //
 // Author: Dustin Fast, dustin.fast@hotmail.com, 2018
 
@@ -25,27 +25,98 @@
 
 typedef struct cmd_obj {
     char cmd[MAX_LEN];
-    char args[MAX_LEN];
+    char args[MAX_LEN];  // TODO: args should be a 2D array of strings?
 } command;
+
     
 void write_err(char *arr);
 int parse_cmds(char **arr_in, char *arr_out, int in_len, int i, int j, int k);
 int get_cmds(int argc, char **argv, command *cmds);
 
+
+// For debug
+void debugcmd(char *label, command cmd) {
+    str_write("\n", STDOUT);
+    str_writeln(label, STDOUT);
+    str_writeln(cmd.cmd, STDOUT);
+    str_writeln(cmd.args, STDOUT);
+    str_write("\n", STDOUT);
+}
+
+
+// Forks and pipes output between the given CMDS, writing piped data to out_fd
+// TODO: Recursive
 int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
-    str_writeln(cmds[0].cmd, STDOUT);
-    return 0;
-    
+    command *cmd1, *cmd2;
+    pid_t cmd1_pid, tee_pid, cmd2_pid;
+    int top_pipe[2];
+    int pipe_read, pipe_write;
+    int i = 0;
+
+    // Init top-level pipe
+    if (pipe(top_pipe) != 0)
+        return -1;
+    pipe_write= top_pipe[0];
+    pipe_read = top_pipe[1];
+
+    // for cmd in cmds...
+     while (i < cmd_count) {    
+        // Determine the 2 cmds for this iteration
+        cmd1 = &cmds[i++];
+        cmd2 = &cmds[i++];
+        
+        cmd1_pid = fork();
+        if (cmd1_pid == 0) {
+            // In Child 1 ...
+            debugcmd("Start cmd 1:", *cmd1);  // debug
+            exit(0);  // exit cmd1_pid
+
+        } else {
+            // In Parent ...
+            waitpid(cmd1_pid, NULL, 0);
+            str_writeln("cmd1 done", STDOUT);  // debug
+
+            tee_pid = fork();
+            if (tee_pid == 0) {
+                // In tee_pid ...
+                str_writeln("Start tee:", STDOUT);  // debug
+
+                cmd2_pid = fork();
+                if (cmd2_pid != 0) {
+                    // In GchlidA ...
+                    debugcmd("Start cmd2:", *cmd2);  // debug            
+                    exit(0);  // exit cmd2_pid
+
+                } else {
+                    // In Child 2 (as a parent) ...
+                    waitpid(cmd2_pid, NULL, 0);
+                    str_writeln("tee done", STDOUT);  // debug
+                    exit(0);  // exit tee_pid
+                }
+
+            } else {
+                // In parent...
+                waitpid(tee_pid, NULL, 0);
+                str_writeln("Cmd 2 done.", STDOUT);
+
+                close(pipe_write);
+                close(pipe_read);
+                continue;
+            }
+        }
+    }
+    return i;
 }
 
 
 // Main application driver
 int main(int argc, char **argv) {
     command *commands;
+    char *outfile_name;
     int cmd_count = 0;
     int out_fd;
 
-    // Validate cmd line arg count
+    // Validate arg count
     if (argc < 8)
     {
         // str_write("ERROR: Too few arguments.", STDERR);
@@ -62,13 +133,14 @@ int main(int argc, char **argv) {
         argv[7] = "grep";
         argv[8] = "dfast";
         argv[9] = "]";
-        // argv[10] = "[";
-        // argv[11] = "grep";
-        // argv[12] = "dfast";
-        // argv[13] = "]";
+        argv[10] = "[";
+        argv[11] = "grep";
+        argv[12] = "dfast";
+        argv[13] = "]";
     }
+    outfile_name = argv[1];
 
-    // Parse cmd line args for commands to run
+    // Parse cmd line args for commands to run, wrapping them in commands.
     commands = malloc(MAX_LEN * sizeof(command));
     cmd_count = get_cmds(argc, argv, commands);
     if (cmd_count < 2) {
@@ -77,23 +149,30 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    // Open the output file denoted by argv[1]
-    out_fd = open(argv[1], O_CREAT | O_WRONLY | O_TRUNC, 00644);
+    // Open the output file
+    out_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
     if (out_fd < 0) {
         write_err("ERROR: Failed to open output file. Ensure proper format.");
         free(commands);
         return -1;
     }
 
-    if(fork_and_pipe(commands, cmd_count, out_fd) != -1) {
+    int results = fork_and_pipe(commands, cmd_count, out_fd);
+    if(results > -1) {
+        str_write("Success! ", STDOUT);
+        str_iwrite(results, STDOUT);
+        str_write(" processes piped.\nUse 'cat ", STDOUT);
+        str_write(outfile_name, STDOUT);
+        str_writeln("' to view results.", STDOUT);
+    } else {
+        write_err("ERROR: Failed during fork and pipe process.");
+    } 
 
-    }
-
+    close(out_fd);
     free(commands);
 
     return 0;
 }
-
 
 
 // Prints the given char array to stderr with usage info and trailing newline.

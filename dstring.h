@@ -5,10 +5,11 @@
 
 #define MAX_INT_DIGITS (19)  // Num digits in 64-bit int string representation
 
+
 // Given a null-terminated string, returns the length of that string.
 size_t str_len(char *arr) {
     int length = 0;
-    for (char *c=arr; *c!='\0'; c++)
+    for (char *c = arr; *c != '\0'; c++)
         length++;
 
     return length;
@@ -72,10 +73,18 @@ void itoa(int n, char *arr_out, int out_len) {
 
 
 // Prints the given interger to the given file descriptor, followed by a newline.
-int str_writei(int n, int fd) {
+int str_iwriteln(int n, int fd) {
     char arr[MAX_INT_DIGITS];
     itoa(n, arr, MAX_INT_DIGITS);
     str_writeln(arr, STDOUT_FILENO);
+}
+
+
+// Prints the given interger to the given file descriptor, followed by a newline.
+int str_iwrite(int n, int fd) {
+    char arr[MAX_INT_DIGITS];
+    itoa(n, arr, MAX_INT_DIGITS);
+    str_write(arr, STDOUT_FILENO);
 }
 
 
