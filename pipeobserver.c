@@ -23,12 +23,14 @@
 #define USAGE ("./pipeobserver OUTFILE [ CMD1 ] [ CMD2 ]")
 
 
+// Command representation
 typedef struct cmd_obj {
     char cmd[MAX_LEN];
-    char args[MAX_LEN];  // TODO: args should be a 2D array of strings?
+    char args[MAX_LEN];
 } command;
 
-    
+
+// Func defs
 void write_err(char *arr);
 int parse_cmds(char **arr_in, char *arr_out, int in_len, int i, int j, int k);
 int get_cmds(int argc, char **argv, command *cmds);
@@ -42,6 +44,7 @@ void debugcmd(char *label, command cmd) {
     str_writeln(cmd.args, STDOUT);
     str_write("\n", STDOUT);
 }
+
 
 // Helper function to connect read/write/close pipes.
 // Mode 1: replace old_in w/ pipe_fds[1]
@@ -67,20 +70,18 @@ void connect_pipe(int mode, int *pipe_fds, int old_in, int old_out) {
     }
 }
 
-// Forks and pipes output between the given CMDS, writing piped data to out_fd
-// TODO: Recursive
+
+// Pipes output between the given CMDS which are executed as forks.
+// Piped data is copied to the given file desciptor out_fd.
 int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
     command *cmd1, *cmd2;
     pid_t cmd1_pid, tee_pid, cmd2_pid;
     int top_pipe[2];
-    int pipe_read, pipe_write;
     int i = 0;
 
     // Init top-level pipe
     if (pipe(top_pipe) != 0)
         return -1;
-    pipe_write= top_pipe[0];
-    pipe_read = top_pipe[1];
 
     // for cmd in cmds...
      while (i < cmd_count) {    
@@ -92,10 +93,12 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
         if (cmd1_pid == 0) {
             // In Child 1 ...
             debugcmd("Start cmd 1:", *cmd1);  // debug
+            close(out_fd); 
+                            
             // TODO: If not firstflag, connect stdin to pipe_read
-            close(out_fd);                 
             char* exec_args[] = {cmd1->args, NULL};
-            execvp(cmd1->cmd, exec_args);
+            execvp(cmd1->cmd, exec_args); // TODO: args not well-formed
+
             exit(0);  // exit cmd1_pid
 
         } else {
@@ -108,14 +111,29 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                 // In tee_pid ...
                 str_writeln("Start tee:", STDOUT);  // debug
 
+                // TODO:
+                // new pipe
+                // connect stdout to NEW pipe_write.
+                // close NEW pipe read
+                // do tee on out_fd, reading on stdin w/read, 
+                // and writing on stdout and the file using write.
+                // close out_fd on end of data
+
                 cmd2_pid = fork();
                 if (cmd2_pid != 0) {
                     // In GchlidA ...
-                    debugcmd("Start cmd2:", *cmd2);  // debug            
+                    debugcmd("Start cmd2:", *cmd2);  // debug  
+
+                    // TODO:
+                    // Connect std in to NEW pipe_read
+                    // close write end
+                    // close out_fd
+                    // do execvp
+                    // If no more cmds, output to stdout, else to top_pipe_write          
                     exit(0);  // exit cmd2_pid
 
                 } else {
-                    // In Child 2 (as a parent) ...
+                    // In tee (as cmd2's parent) ...
                     waitpid(cmd2_pid, NULL, 0);
                     str_writeln("tee done", STDOUT);  // debug
                     exit(0);  // exit tee_pid
@@ -126,9 +144,10 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                 waitpid(tee_pid, NULL, 0);
                 str_writeln("Cmd 2 done.", STDOUT);
 
-                close(pipe_write);
-                close(pipe_read);
-                continue;
+                close(top_pipe[0]);
+                close(top_pipe[0]);
+                // TODO: continue;
+                return i;  // debug
             }
         }
     }
