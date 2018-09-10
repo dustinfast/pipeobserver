@@ -16,6 +16,8 @@
 
 #include "dstring.h"  // String function lib, uses syscalls only.
 
+
+// Constants
 #define MAX_LEN (8192)
 #define STDIN (STDIN_FILENO)
 #define STDOUT (STDOUT_FILENO)
@@ -25,7 +27,7 @@
 
 // Abstraction of a command and it's command line args.
 typedef struct cmd_obj {
-    char cmd[MAX_LEN];
+    char exe[MAX_LEN];
     char *args[MAX_LEN];
 } command;
 
@@ -40,9 +42,8 @@ void connect_pipe(int mode, int *pipe_fds, int old_in, int old_out);
 void debugcmd(char *label, command cmd) {
     str_write("\n", STDOUT);
     str_writeln(label, STDOUT);
-    str_writeln(cmd.cmd, STDOUT);
+    str_writeln(cmd.exe, STDOUT);
     str_writeln(cmd.args[0], STDOUT);
-    str_write("\n", STDOUT);
 }
 
 
@@ -72,7 +73,7 @@ void debugcmd(char *label, command cmd) {
                             
 //             // TODO: If not firstflag, connect stdin to pipe_read
 //             char* exec_args[] = {cmd1->args, NULL};
-//             execvp(cmd1->cmd, exec_args); // TODO: args not well-formed
+//             execvp(cmd1->exe, exec_args); // TODO: args not well-formed
 
 //             exit(0);  // exit cmd1_pid
 
@@ -135,36 +136,30 @@ void debugcmd(char *label, command cmd) {
 // Main application driver
 int main(int argc, char **argv) {
     command *commands;
-    char *outfile_name;
+    char *outfile_name = argv[1];
     int cmd_count = 0;
     int out_fd;
 
-    // Validate arg count
-    if (argc < 8)
-    {
-        // str_write("ERROR: Too few arguments.", STDERR);
-        // return -1;
-
-        // debug
-        argc = 9;
-        argv[1] = "allfiles";
-        argv[2] = "[";
-        argv[3] = "ps";
-        argv[4] = "aux";
-        argv[5] = "]";
-        argv[6] = "[";
-        argv[7] = "grep";
-        argv[8] = "dfast";
-        argv[9] = "]";
-        argv[10] = "[";
-        argv[11] = "grep";
-        argv[12] = "dfast";
-        argv[13] = "]";
-    }
+    // debug
+    argc = 14;
+    argc= 9;
+    argv[1] = "allfiles";
+    argv[2] = "[";
+    argv[3] = "ps";
+    argv[4] = "aux";
+    argv[5] = "]";
+    argv[6] = "[";
+    argv[7] = "grep";
+    argv[8] = "dfast";
+    argv[9] = "]";
+    argv[10] = "[";
+    argv[11] = "grep";
+    argv[12] = "dfast";
+    argv[13] = "]";
     outfile_name = argv[1];
 
-    // Parse cmd line args for commands to run.
-    commands = malloc(MAX_LEN * sizeof(command)); // Todo dynamically size
+    // Parse cmd line args for commands to be run
+    commands = malloc(MAX_LEN * sizeof(command));
     cmd_count = 0;
     int i = 2;
 
@@ -173,30 +168,28 @@ int main(int argc, char **argv) {
         command cmd;
         i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
 
-        // On parse fail
+        // Set fail, else add cmd to commands
         if (i == -1) 
             cmd_count = -1;
-
-        // On parse success
         else 
-            // Add the cmd to cmds
             commands[cmd_count++] = cmd;
             debugcmd("Set:", cmd);  // debug
     }
 
+    // Ensure at least two commands
     if (cmd_count < 2) {
-        write_err("ERROR: Invalid arguments received.");
+        write_err("ERROR: Not enough, or invalid cmd arguments received.");
         free(commands);
         return -1;
     }
 
-    // // Open the output file
-    // out_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
-    // if (out_fd < 0) {
-    //     write_err("ERROR: Failed to open output file. Ensure proper format.");
-    //     free(commands);
-    //     return -1;
-    // }
+    // Open the output file
+    out_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
+    if (out_fd < 0) {
+        write_err("ERROR: Failed to open output file. Ensure proper format.");
+        free(commands);
+        return -1;
+    }
 
     // int results = fork_and_pipe(commands, cmd_count, out_fd);
     // if(results > -1) {
@@ -209,18 +202,13 @@ int main(int argc, char **argv) {
     //     write_err("ERROR: Failed during fork and pipe process.");
     // } 
 
-    // close(out_fd);
+    close(out_fd);
     free(commands);
 
+    // TODO: dynamically alloc commands arr
+    // TODO: Verify no mem leak
+
     return 0;
-}
-
-
-// Prints the given char array to stderr with usage info and trailing newline.
-void write_err(char *arr) {
-    str_writeln(arr, STDERR);
-    str_write("Usage: ", STDERR);
-    str_writeln(USAGE, STDERR);
 }
 
 
@@ -235,49 +223,45 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
     // k = denotes open/close bracket depth/level
     // z = denotes next arg is executable name
 
-    // If curr str is an open bracket
-    if (*arr_in[i] == '[') {
+    switch(*arr_in[i]) {
+        case '[':
+            // If first open bracket found, next el is exe name. Set z flag.
+            if (k == 0)
+                z = 1;
 
-        // If first open bracket encountered, next element is executable name
-        if (k == 0)
-            z = 1;
+            // Else, its an arg.
+            else 
+                cmd->args[j++] = arr_in[i];
 
-        // Else, its an arg.
-        else 
-            cmd->args[j++] = arr_in[i];
-        k++;
-    }
-
-    // Else if curr str is a closing bracket
-    else if (*arr_in[i] == ']') {
-
-        // If no first open bracket, unmatched bracket error
-        if (k == 0)
-            return -1;
+            k++;  // Incr bracket depth
+            break;
         
-        // If at bracket level 1, it's our closing bracket. Processing done.
-        if (k == 1)
-            return ++i;
-
-        // Else, it's an arg
-        cmd->args[j++] = arr_in[i];
-        k--;
-
-    // Else curr str is either an arg or exe name 
-    } else {
-
-        // If executable name flag set
-        if (z) {
-            str_cpy(arr_in[i], cmd->cmd, str_len(arr_in[i]));
-            z = 0;
-
-        // Else, its an arg.
-        } else {
+        case ']':
+            // If no first open bracket, unmatched bracket error
+            if (k == 0)
+                return -1;
+            // If at bracket level 1, it's our closing bracket, signaling done.
+            if (k == 1)
+                return ++i;
+            // Else, it's an arg
             cmd->args[j++] = arr_in[i];
-        }
+            
+            k--;  // Decr bracket depth
+            break;
+
+        default:
+            // If executable name flag set, write cmd.cmd and unset flag.
+            if (z) {
+                str_cpy(arr_in[i], cmd->exe, str_len(arr_in[i]));
+                z = 0;
+
+            // Else, its an arg.
+            } else {
+                cmd->args[j++] = arr_in[i];
+            }
     }
 
-    // debug
+    // Check for unexpected state
     if (k < 0 || (i > in_len && k > 0)) {
         write_err("DEBUG: Unexcepted error in get_nextcmd.");
         return -1;
@@ -313,3 +297,9 @@ void connect_pipe(int mode, int *pipe_fds, int old_in, int old_out) {
 }
 
 
+// Prints the given char array to stderr with usage info on their own lines.
+void write_err(char *arr) {
+    str_writeln(arr, STDERR);
+    str_write("Usage: ", STDERR);
+    str_writeln(USAGE, STDERR);
+}
