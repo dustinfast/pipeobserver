@@ -4,7 +4,6 @@
 // Example: ./pipeobserver OUTFILE [ ps aux ] [ grep SCREEN ]
 // Example: ./pipobserver OUTFILE [ echo [ Hello ] ] [ wc -l ]
 // NOTE: Brackets in cmd line args must be matched. Ex: "[ ls ] ]" will fail.
-// NOTE: May be easily adapted to handle an arbitrary number of commands.
 //
 // Author: Dustin Fast, dustin.fast@hotmail.com, 2018
 
@@ -15,16 +14,17 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
-#include "dstring.h"  // String function lib, uses syscalls only.
+#include "dstring.h"            // String function lib, uses syscalls only.
 
-#define MAX_LEN (8192)
-#define STDIN (STDIN_FILENO)
-#define STDOUT (STDOUT_FILENO)
-#define STDERR (STDERR_FILENO)
+#define MAX_LEN (8192)          // Denotes max number of args per command
+#define MAX_CMDS (2)            // Denotes max number of commands
+#define STDIN (STDIN_FILENO)    // Time...
+#define STDOUT (STDOUT_FILENO)  // Is...
+#define STDERR (STDERR_FILENO)  // Money.
 #define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ] ...")
 
 
-// Abstraction of a command and up to MAX_LEN of its cmd line args
+// Abstraction of a command having up to MAX_LEN cmd line args
 typedef struct cmd_obj {
     char exe[MAX_LEN];
     char *args[MAX_LEN];
@@ -35,7 +35,7 @@ typedef struct cmd_obj {
 void write_err(char *arr);
 int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, int z);
 void do_pipeconn(int mode, int *pipe_fds, int old_in, int old_out);
-
+int fork_and_pipe(command *cmds, int cmd_count, int out_fd);
 
 // For debug ouput
 void debugcmd(char *label, command cmd) {
@@ -47,141 +47,6 @@ void debugcmd(char *label, command cmd) {
 }
 
 
-// Pipes output between cmd[0] and cmd[1], which are executed as forks -
-// Child 1 runs cmd[0], piping it's stdout to GrandchildA which writes it to
-// OUTFILE before piping it again to GrandchildB for use as cmd[1]'s stdin.
-// Piped data is also copied to the given file desciptor out_fd.
-// RETURNS: A pos number denoting number of cmds processed, or a neg err code.
-int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
-    command *cmd1, *cmd2;
-    pid_t child1_pid, child2_pid, gchildA_pid, gchildB_pid;
-    int top_pipe[2];
-    int exitcode = -0;  
-    int i = 0;
-
-    // Init top-level pipe, to connect child1 stdout to child2 stdin.
-    if (pipe(top_pipe) != 0)
-        return -1;
-
-    // TODO: for cmd in cmds...  
-     while (i < cmd_count) {    
-        // Determine the 2 cmds for this iteration
-        cmd1 = &cmds[i++];
-        cmd2 = &cmds[i++];
-        
-        child1_pid = fork();
-        if (child1_pid == 0) {
-            /* In Child 1 ---------------------------------- */
-            str_write("Child 1: ", STDOUT); // debug
-            str_iwriteln(getpid(), STDOUT); // debug
-            close(out_fd);                  // close unused
-            close(top_pipe[0]);             // close unused         
-            dup2(top_pipe[1], STDOUT);      // redirect stdout
-            // TODO: If not firstflag, connect stdin to pipe_read
-            exit(execvp(cmd1->exe, cmd1->args));    // do cmd
-
-        } else {
-            /* In Parent -------------------------------------------- */            
-            waitpid(child1_pid, &exitcode, 0);
-            str_write("Child 1 wait done in: ", STDOUT);    // debug
-            str_iwriteln(getpid(), STDOUT);                 // debug
-
-            if (exitcode != 0) {
-                write_err("ERROR: Invalid cmd1, or cmd1 returned error.");
-                return exitcode;
-            }
-
-            child2_pid = fork();
-            if (child2_pid == 0) {
-                /* In Child 2 ------------------------------- */            
-                str_write("Child 2: ", STDOUT);     // debug
-                str_iwriteln(getpid(), STDOUT);     // debug
-                close(top_pipe[1]);                 // close unsued pipe end
-                dup2(top_pipe[0], STDIN);           // redirect stdin
-
-                // Init child-level pipe, to pipe gchildA out to gchildB in
-                int gchild_pipe[2];
-                if (pipe(gchild_pipe) != 0)
-                    return -1;
-
-                gchildA_pid = fork();
-                if (gchildA_pid != 0) {
-                    /* In Grandchild A ------------- */            
-                    str_write("GchildA: ", STDOUT);      // debug  
-                    str_iwriteln(getpid(), STDOUT);      // debug
-                    close(gchild_pipe[0]);               // close unsued
-                    dup2(gchild_pipe[1], STDOUT);        // redirect stdout
-
-                    // "tee" stdin to out_fd, and "pipe" data to gchildB
-                    char ch;
-                    while (read(STDIN, &ch, 1) > 0) {
-                        write(out_fd, &ch, 1);
-                        write(STDOUT, &ch, 1);
-
-                        // TODO: Hangs without this, but gchildb needs until EOF
-                        // if (ch == '\n')
-                        //     break;
-                    }
-
-                    close(out_fd);
-                    sleep(1);  // TODO: debug
-                    exit(0);  // exit gchild1
-
-                } else {
-                    /* In Child 2 ---------------------------- */ 
-                    waitpid(gchildA_pid, &exitcode, 0);
-                    str_write("\nGchildA wait done in: ", STDOUT);
-                    str_iwriteln(getpid(), STDOUT);
-
-                    if (exitcode != 0) {
-                        write_err("ERROR: 'tee' fork exited abnormally.");
-                        return exitcode;
-                    }
-                    
-                    gchildB_pid = fork();
-                    if (gchildB_pid == 0) {
-                        /* In grandchild B ---------- */
-                        str_write("\nGchildB: ", STDOUT);
-                        str_iwriteln(getpid(), STDOUT);
-                        close(out_fd);                  // close unused
-                        close(gchild_pipe[1]);          // close unused
-                        dup2(gchild_pipe[0], STDIN);    // redirect stdin
-                        exit(execvp(cmd2->exe, cmd2->args));    // do cmd
-                    }
-
-                    /* Still in Child 2, after GChild A &B --- */ 
-                    waitpid(gchildB_pid, &exitcode, 0);
-                    str_write("\nGchildB wait done in: ", STDOUT);  // debug
-                    str_iwriteln(getpid(), STDOUT);                 // debug
-
-                    if (exitcode != 0)
-                        write_err("ERROR: Invalid cmd2, or cmd2 returned error.");
-
-                    exit(exitcode);  // exit child 2
-                }
-
-            } else {
-                /* Still in Parent --------------------------------- */                            
-                waitpid(child2_pid, &exitcode, 0);
-                str_write("Child 2 wait done in: ", STDOUT);    // debug
-                str_iwriteln(getpid(), STDOUT);                 // debug
-
-                close(top_pipe[0]);
-                close(top_pipe[1]);
-
-                if (exitcode != 0) {
-                    return(exitcode);
-                }
-
-                continue;
-                // return i;  // debug
-            }
-        }
-    }
-    return i;
-}
-
-
 // Main application driver
 int main(int argc, char **argv) {
     command *commands;
@@ -190,23 +55,22 @@ int main(int argc, char **argv) {
     int out_fd;
 
     // Parse cmd line args for commands to be run
-    commands = malloc(MAX_LEN * sizeof(command));
+    commands = malloc(2 * sizeof(command));
     cmd_count = 0;
     int i = 2;
 
-    while (i < argc && cmd_count > -1) {
-        // Get the next cmd from the recursive parser, as a command.
+    // Form commands, as parsed by the recursive parser
+    while (i < argc && cmd_count < MAX_CMDS) {
         command cmd;
         i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
 
-        // Set fail, else add cmd to commands
-        if (i != -1) 
-            commands[cmd_count++] = cmd;
-        else 
-            cmd_count = -1;
+        // Break on bad cmd format encountered by parser
+        if (i < 0) 
+            break;
+        commands[cmd_count++] = cmd;
     }
 
-    // Ensure at least two commands
+    // Ensure at least two valid commands
     if (cmd_count < 2) {
         write_err("ERROR: Too few, or invalid cmd arguments received.");
         free(commands);
@@ -223,14 +87,10 @@ int main(int argc, char **argv) {
 
     int results = fork_and_pipe(commands, cmd_count, out_fd);
     if(results > -1) {
-        str_write("Success! ", STDOUT);
-        str_iwrite(results, STDOUT);
-        str_write(" processes piped.\nUse 'cat ", STDOUT);
+        str_write("Success!\nUse 'cat ", STDOUT);
         str_write(outfile_name, STDOUT);
-        str_writeln("' to view results.", STDOUT);
-    } else {
-        write_err("ERROR: Failed during fork and pipe process.");
-    } 
+        str_writeln("' to view piped data.", STDOUT);
+    } // else, error will have been displayed by fork_and_pipe.
 
     close(out_fd);
     free(commands);
@@ -304,6 +164,130 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
     get_nextcmd(arr_in, in_len, cmd, ++i, j, k, z);
 }
 
+
+// Pipes output between cmd[0] and cmd[1], which are executed as forks -
+// Child 1 runs cmd[0], piping it's stdout to GrandchildA which writes it to
+// OUTFILE before piping it again to GrandchildB for use as cmd[1]'s stdin.
+// Piped data is also copied to the given file desciptor out_fd.
+// RETURNS: 0 on success, else a negative integer.
+int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
+    command *cmd1, *cmd2;
+    pid_t child1_pid, child2_pid, gchildA_pid, gchildB_pid;
+    int top_pipe[2];
+    int exitcode = -0;  
+    int i = 0;
+
+    // Init top-level pipe, to connect child1 stdout to child2 stdin.
+    if (pipe(top_pipe) != 0)
+        return -1;
+   
+    // Denote the 2 cmds
+    cmd1 = &cmds[i++];
+    cmd2 = &cmds[i++];
+    
+    child1_pid = fork();
+    if (child1_pid == 0) {
+        /* In Child 1 ---------------------------------- */
+        str_write("Child 1: ", STDOUT); // debug
+        str_iwriteln(getpid(), STDOUT); // debug
+        close(out_fd);                  // close unused
+        close(top_pipe[0]);             // close unused         
+        dup2(top_pipe[1], STDOUT);      // redirect stdout
+        exit(execvp(cmd1->exe, cmd1->args));    // do cmd
+
+    } else {
+        /* In Parent -------------------------------------------- */            
+        waitpid(child1_pid, &exitcode, 0);
+        str_write("Child 1 wait done in: ", STDOUT);    // debug
+        str_iwriteln(getpid(), STDOUT);                 // debug
+
+        if (exitcode != 0) {
+            write_err("ERROR: Invalid cmd1, or cmd1 returned error.");
+            return exitcode;
+        }
+
+        child2_pid = fork();
+        if (child2_pid == 0) {
+            /* In Child 2 ------------------------------- */            
+            str_write("Child 2: ", STDOUT);     // debug
+            str_iwriteln(getpid(), STDOUT);     // debug
+            close(top_pipe[1]);                 // close unsued pipe end
+            dup2(top_pipe[0], STDIN);           // redirect stdin
+
+            // Init child-level pipe, to pipe gchildA stdout to gchildB stdin
+            int gchild_pipe[2];
+            if (pipe(gchild_pipe) != 0)
+                return -1;
+
+            gchildA_pid = fork();
+            if (gchildA_pid != 0) {
+                /* In Grandchild A ------------- */            
+                str_write("GchildA: ", STDOUT);      // debug  
+                str_iwriteln(getpid(), STDOUT);      // debug
+                close(gchild_pipe[0]);               // close unsued
+                dup2(gchild_pipe[1], STDOUT);        // redirect stdout
+
+                // "tee" stdin to out_fd, and "pipe" data to gchildB
+                char ch;
+                while (read(STDIN, &ch, 1) > 0) {
+                    write(out_fd, &ch, 1);
+                    write(STDOUT, &ch, 1);
+
+                    // TODO: Hangs without this, but gchildb needs until EOF
+                    if (ch == '\n')
+                        break;
+                }
+
+                close(out_fd);
+                sleep(1);  // TODO: debug
+                exit(0);  // exit gchild1
+
+            } else {
+                /* In Child 2 ---------------------------- */ 
+                waitpid(gchildA_pid, &exitcode, 0);
+                str_write("\nGchildA wait done in: ", STDOUT);
+                str_iwriteln(getpid(), STDOUT);
+
+                if (exitcode != 0) {
+                    write_err("ERROR: 'tee' fork exited abnormally.");
+                    return exitcode;
+                }
+                
+                gchildB_pid = fork();
+                if (gchildB_pid == 0) {
+                    /* In grandchild B ---------- */
+                    str_write("\nGchildB: ", STDOUT);
+                    str_iwriteln(getpid(), STDOUT);
+                    close(out_fd);                  // close unused
+                    close(gchild_pipe[1]);          // close unused
+                    dup2(gchild_pipe[0], STDIN);    // redirect stdin
+                    exit(execvp(cmd2->exe, cmd2->args));    // do cmd
+                }
+
+                /* Still in Child 2, after GChild A &B --- */ 
+                waitpid(gchildB_pid, &exitcode, 0);
+                str_write("\nGchildB wait done in: ", STDOUT);  // debug
+                str_iwriteln(getpid(), STDOUT);                 // debug
+
+                if (exitcode != 0)
+                    write_err("ERROR: Invalid cmd2, or cmd2 returned error.");
+
+                exit(exitcode);  // exit child 2
+            }
+
+        } else {
+            /* Still in Parent --------------------------------- */                            
+            waitpid(child2_pid, &exitcode, 0);
+            str_write("Child 2 wait done in: ", STDOUT);    // debug
+            str_iwriteln(getpid(), STDOUT);                 // debug
+
+            close(top_pipe[0]);
+            close(top_pipe[1]);
+
+            return(exitcode);
+        }
+    }
+}
 
 // Prints the given char array to stderr with usage info on their own lines.
 void write_err(char *arr) {
