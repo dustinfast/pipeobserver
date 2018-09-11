@@ -109,18 +109,17 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                     close(gchild_pipe[0]);               // close unsued
                     dup2(gchild_pipe[1], STDOUT);        // redirect stdout
 
-                    // do "tee" on out_fd, and write tee'd data to stdout
-                    char buf[MAX_LEN];
-                    if (read(STDIN, buf, MAX_LEN) > 0) {
-                        // TODO: 
-                        printf("GChildA Got: %s", buf);
-                        str_write(buf, STDOUT);
-                        str_write(buf, out_fd);
-                        printf("in read");
-                    }
+                    // "tee" on out_fd, and write tee'd data to stdout.
+                    // TODO: Only reads to first newline. Should read to EOF?
+                    char ch;
+                    do {
+                        read(STDIN, &ch, 1)
+                        write(out_fd, &ch, 1);
+                        write(STDOUT, &ch, 1);
+                    } while (ch != '\n');
                     close(out_fd); 
 
-                    sleep(1);  // TODO: Test
+                    sleep(1);  // debug
                     exit(0);  // exit gchild1
 
                 } else {

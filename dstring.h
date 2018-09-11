@@ -31,7 +31,7 @@ int str_write(char *arr, int fd) {
     if (!char_count) 
         return 0;
 
-    // Write string to the given file descriptor.
+    // Write string to the given file descriptor. Note ptr arith in write().
     while (total_written < char_count) {
         curr_write = write(fd, arr + total_written, char_count - total_written);
         
