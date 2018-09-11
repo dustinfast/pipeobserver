@@ -55,7 +55,7 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
     int exitcode = -1;  
     int i = 0;
 
-    // Init top-level pipe
+    // Init top-level pipe, to connect child1 stdout to child2 stdin.
     if (pipe(top_pipe) != 0)
         return -1;
 
@@ -70,17 +70,17 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
             /* In Child 1 ---------------------------------- */
             str_write("Child 1: ", STDOUT); // debug
             str_iwriteln(getpid(), STDOUT); // debug
-            // close(out_fd);                          // unused outfile fd
+            close(out_fd);                  // close unused
+            close(top_pipe[0]);             // close unused         
+            dup2(top_pipe[1], STDOUT);      // redirect stdout
 
-            // TODO: If not firstflag, connect stdin to pipe_read
-            // do_pipeconn(1, top_pipe, -1, STDOUT);    // redirect stdout
-            dup2(top_pipe[1], STDOUT);  
-            close(top_pipe[0]);          
 
+            // TODO:
+            // If not firstflag, connect stdin to pipe_read
             // execvp(cmd1->exe, cmd1->args);          // do cmd
             str_writeln("test", STDOUT);
-            // str_writeln("test", top_pipe[0]);
-            exit(-1);  // exit Child 1
+
+            exit(-1);  // exit child 1
 
         } else {
             /* In Parent -------------------------------------------- */            
@@ -91,34 +91,28 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
             child2_pid = fork();
             if (child2_pid == 0) {
                 /* In Child 2 ------------------------------- */            
-                str_write("Child 2: ", STDOUT);  // debug
-                str_iwriteln(getpid(), STDOUT);  // debug
-                // close(out_fd); 
+                str_write("Child 2: ", STDOUT);     // debug
+                str_iwriteln(getpid(), STDOUT);     // debug
+                close(top_pipe[1]);                 // close unsued pipe end
+                dup2(top_pipe[0], STDIN);           // redirect stdin
 
-                // do_pipeconn(2, top_pipe, STDIN, -1);     // redirect stdin
-                dup2(top_pipe[0], STDIN);  
-                close(top_pipe[1]);  
-
-                // Init child-level pipe, to connect ...
-                int child_pipe[2];
-                if (pipe(child_pipe) != 0)
+                // Init child-level pipe, to connect gchildA stdout to gchildB stdin
+                int gchild_pipe[2];
+                if (pipe(gchild_pipe) != 0)
                     return -1;
 
                 gchildA_pid = fork();
                 if (gchildA_pid != 0) {
                     /* In Grandchild A ------------ */            
-                    str_write("GchildA: ", STDOUT);  // debug  
-                    str_iwriteln(getpid(), STDOUT);  // debug
+                    str_write("GchildA: ", STDOUT);      // debug  
+                    str_iwriteln(getpid(), STDOUT);      // debug
+                    close(gchild_pipe[0]);               // close unsued
+                    dup2(gchild_pipe[1], STDOUT);        // redirect stdout
 
-
-                    // do_pipeconn(1, child_pipe, -1, STDOUT);    // redirect stdout
-                    dup2(child_pipe[1], STDOUT);  
-                    close(child_pipe[0]); 
-
-                    // do "tee" on out_fd, reading on stdin w/read, 
-                    // and writing on stdout and the file using write.
+                    // do "tee" on out_fd, and write tee'd data to stdout
                     char buf[MAX_LEN];
                     if (read(STDIN, buf, MAX_LEN) > 0) {
+                        // TODO: 
                         printf("GChildA Got: %s", buf);
                         str_write(buf, STDOUT);
                         str_write(buf, out_fd);
@@ -126,7 +120,7 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                     }
                     close(out_fd); 
 
-                    sleep(1);
+                    sleep(1);  // TODO: Test
                     exit(0);  // exit gchild1
 
                 } else {
@@ -135,39 +129,40 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                     str_write("\nGchildA wait done in: ", STDOUT);
                     str_iwriteln(getpid(), STDOUT);
 
-                    // TODO: if (exitcode 
+                    // TODO: if (exitcode) ...
                     
                     gchildB_pid = fork();
                     if (gchildB_pid == 0) {
-                        // In grandchild B
+                        /* In grandchild B -------------------- */
                         str_write("\nGchildB: ", STDOUT);
                         str_iwriteln(getpid(), STDOUT);
-                        close(out_fd); 
+                        close(out_fd);                  // close unused
+                        close(gchild_pipe[1]);          // close unused
+                        dup2(gchild_pipe[0], STDIN);    // redirect stdin
 
-                        // do_pipeconn(2, child_pipe, STDIN, -1);  // redirect stdin
-                        dup2(child_pipe[0], STDIN);  
-                        close(child_pipe[1]);
+                        // TODO:
+                        // if more cmds, redirect stdout
                         exit(0);
                         // execvp(cmd2->exe, cmd2->args);
                         exit(-1);
                     }
 
-                    /* Still in Child 2 ---------------------------- */ 
-                    waitpid(gchildB_pid,NULL, 0);
+                    /* Still in Child 2, after GChilds -------- */ 
+                    waitpid(gchildB_pid, &exitcode, 0);
                     str_write("\nGchildB wait done in: ", STDOUT);  // debug
-                    str_iwriteln(getpid(), STDOUT);
-                    exit(0);  // exit Child 2
+                    str_iwriteln(getpid(), STDOUT);                 // debug
+                    exit(0);  // exit child 2
                 }
 
             } else {
-                /* In Parent -------------------------------------------- */                            
+                /* Still in Parent --------------------------------- */                            
                 waitpid(child2_pid, &exitcode, 0);
-                str_write("Child 2 wait done in: ", STDOUT); // debug
-                str_iwriteln(getpid(), STDOUT);
+                str_write("Child 2 wait done in: ", STDOUT);    // debug
+                str_iwriteln(getpid(), STDOUT);                 // debug
 
                 close(top_pipe[0]);
                 close(top_pipe[1]);
-                // continue;
+                // TODO: continue;
                 return i;  // debug
             }
         }
@@ -317,31 +312,6 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
 
     // Increase curr str index and recurse
     get_nextcmd(arr_in, in_len, cmd, ++i, j, k, z);
-}
-
-// 1 = in
-// Helper function to connect file descriptors, closing unused ends.
-// Mode 1: replace old_out w/ pipe_fds[1] and closes pipe_fds[0]
-// Mode 2: replace old_in w/ pipe_fds[0] and closes pipe_fds[1]
-// Mode 3: Does both mode 1 and mode 2 without associated closes
-// Note: Depending on mode, old_in and old_out may be NULL.
-void do_pipeconn(int mode, int *pipe_fds, int old_in, int old_out) {
-    switch(mode) {
-        case 1:
-            dup2(pipe_fds[1], old_out);
-            close(pipe_fds[0]);
-            break;
-        case 2:
-            dup2(pipe_fds[0], old_in);
-            close(pipe_fds[1]);
-            break;
-        case 3:
-            dup2(pipe_fds[1], old_out);
-            dup2(pipe_fds[0], old_in);
-            break;
-        default:
-            str_writeln("ERROR: Invalid mode passed to do_pipeconn", STDERR);
-    }
 }
 
 
