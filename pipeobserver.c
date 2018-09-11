@@ -3,7 +3,7 @@
 // Usage: ./pipeobserver OUTFILE [ process1 ] [ process2 ] [ process3 ] ...
 // Example: ./pipeobserver OUTFILE [ ps aux ] [ grep SCREEN ]
 // Example: ./pipobserver OUTFILE [ echo [ Hello ] ] [ wc -l ]
-// NOTES: Brackets in cmd line args must be matched. Ex: "[ hi ]]" will fail.
+// NOTES: Brackets in cmd line args must be matched. Ex: "[ ls ]]" will fail.
 //
 // Author: Dustin Fast, dustin.fast@hotmail.com, 2018
 
@@ -202,7 +202,7 @@ int main(int argc, char **argv) {
     int i = 2;
 
     while (i < argc && cmd_count > -1) {
-        // Get the next cmd from the recursive parser
+        // Get the next cmd from the recursive parser, as a command.
         command cmd;
         i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
 
@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
 
     // Ensure at least two commands
     if (cmd_count < 2) {
-        write_err("ERROR: Not enough, or invalid cmd arguments received.");
+        write_err("ERROR: Too few, or invalid cmd arguments received.");
         free(commands);
         return -1;
     }
@@ -223,7 +223,7 @@ int main(int argc, char **argv) {
     // Open the output file
     out_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
     if (out_fd < 0) {
-        write_err("ERROR: Failed to open output file. Ensure proper format.");
+        write_err("ERROR: Failed to open output file.");
         free(commands);
         return -1;
     }
@@ -237,8 +237,6 @@ int main(int argc, char **argv) {
         str_writeln("' to view results.", STDOUT);
     } else {
         write_err("ERROR: Failed during fork and pipe process.");
-        // todo cleanup
-        return -1;
     } 
 
     close(out_fd);
@@ -250,11 +248,10 @@ int main(int argc, char **argv) {
 }
 
 
-// Recursively parses array of strings of form { '[', 'EXE', 'ARGS', ']', ... }
-// and populates the given cmd struct w the next EXE and ARGS, starting 
-// at arr_in[i].
-// Vars j, k, and z should initially be passed as 0, in_len denotes len(arr_in)
-// Returns index of the first unprocessed ptr in arr_in, or -1 if parse error.
+// Recursively parses char** of form { '[', 'EXE', 'ARGS', ']', ... } and
+// populates the given cmd with the next EXE and ARGS, starting at arr_in[i].
+// Vars j, k, and z should initially be passed as 0. in_len denotes len(arr_in).
+// RETURNS: index of the first unprocessed ptr in arr_in, or -1 if parse error.
 int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, int z) {
     // i = curr index of arr_in
     // j = curr index of cmd->args
