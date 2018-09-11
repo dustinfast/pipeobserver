@@ -1,9 +1,10 @@
-// An application that pipes the output of a series of processes through each
-// other, storing a copy of the data piped to OUTFILE
-// Usage: ./pipeobserver OUTFILE [ process1 ] [ process2 ] [ process3 ] ...
+// An application that pipes the output of command 1 to command 2 and stores
+// a copy of the piped data to OUTFILE.
+// Usage: ./pipeobserver OUTFILE [ command1 ] [ command2 ]
 // Example: ./pipeobserver OUTFILE [ ps aux ] [ grep SCREEN ]
 // Example: ./pipobserver OUTFILE [ echo [ Hello ] ] [ wc -l ]
-// NOTES: Brackets in cmd line args must be matched. Ex: "[ ls ]]" will fail.
+// NOTE: Brackets in cmd line args must be matched. Ex: "[ ls ] ]" will fail.
+// NOTE: May be easily adapted to handle an arbitrary number of commands.
 //
 // Author: Dustin Fast, dustin.fast@hotmail.com, 2018
 
@@ -23,7 +24,7 @@
 #define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ] ...")
 
 
-// Abstraction of a command and it's args.
+// Abstraction of a command and up to MAX_LEN of its cmd line args
 typedef struct cmd_obj {
     char exe[MAX_LEN];
     char *args[MAX_LEN];
@@ -46,20 +47,23 @@ void debugcmd(char *label, command cmd) {
 }
 
 
-// Pipes output between the given CMDS which are executed as forks.
-// Piped data is copied to the given file desciptor out_fd.
+// Pipes output between cmd[0] and cmd[1], which are executed as forks -
+// Child 1 runs cmd[0], piping it's stdout to GrandchildA which writes it to
+// OUTFILE before piping it again to GrandchildB for use as cmd[1]'s stdin.
+// Piped data is also copied to the given file desciptor out_fd.
+// RETURNS: A pos number denoting number of cmds processed, or a neg err code.
 int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
     command *cmd1, *cmd2;
     pid_t child1_pid, child2_pid, gchildA_pid, gchildB_pid;
     int top_pipe[2];
-    int exitcode = -1;  
+    int exitcode = -0;  
     int i = 0;
 
     // Init top-level pipe, to connect child1 stdout to child2 stdin.
     if (pipe(top_pipe) != 0)
         return -1;
 
-    // for cmd in cmds...
+    // TODO: for cmd in cmds...  
      while (i < cmd_count) {    
         // Determine the 2 cmds for this iteration
         cmd1 = &cmds[i++];
@@ -73,20 +77,19 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
             close(out_fd);                  // close unused
             close(top_pipe[0]);             // close unused         
             dup2(top_pipe[1], STDOUT);      // redirect stdout
-
-
-            // TODO:
-            // If not firstflag, connect stdin to pipe_read
-            // execvp(cmd1->exe, cmd1->args);          // do cmd
-            str_writeln("test", STDOUT);
-
-            exit(-1);  // exit child 1
+            // TODO: If not firstflag, connect stdin to pipe_read
+            exit(execvp(cmd1->exe, cmd1->args));    // do cmd
 
         } else {
             /* In Parent -------------------------------------------- */            
             waitpid(child1_pid, &exitcode, 0);
             str_write("Child 1 wait done in: ", STDOUT);    // debug
             str_iwriteln(getpid(), STDOUT);                 // debug
+
+            if (exitcode != 0) {
+                write_err("ERROR: Invalid cmd1, or cmd1 returned error.");
+                return exitcode;
+            }
 
             child2_pid = fork();
             if (child2_pid == 0) {
@@ -96,30 +99,32 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                 close(top_pipe[1]);                 // close unsued pipe end
                 dup2(top_pipe[0], STDIN);           // redirect stdin
 
-                // Init child-level pipe, to connect gchildA stdout to gchildB stdin
+                // Init child-level pipe, to pipe gchildA out to gchildB in
                 int gchild_pipe[2];
                 if (pipe(gchild_pipe) != 0)
                     return -1;
 
                 gchildA_pid = fork();
                 if (gchildA_pid != 0) {
-                    /* In Grandchild A ------------ */            
+                    /* In Grandchild A ------------- */            
                     str_write("GchildA: ", STDOUT);      // debug  
                     str_iwriteln(getpid(), STDOUT);      // debug
                     close(gchild_pipe[0]);               // close unsued
                     dup2(gchild_pipe[1], STDOUT);        // redirect stdout
 
-                    // "tee" on out_fd, and write tee'd data to stdout.
-                    // TODO: Only reads to first newline. Should read to EOF?
+                    // "tee" stdin to out_fd, and "pipe" data to gchildB
                     char ch;
-                    do {
-                        read(STDIN, &ch, 1)
+                    while (read(STDIN, &ch, 1) > 0) {
                         write(out_fd, &ch, 1);
                         write(STDOUT, &ch, 1);
-                    } while (ch != '\n');
-                    close(out_fd); 
 
-                    sleep(1);  // debug
+                        // TODO: Hangs without this, but gchildb needs until EOF
+                        // if (ch == '\n')
+                        //     break;
+                    }
+
+                    close(out_fd);
+                    sleep(1);  // TODO: debug
                     exit(0);  // exit gchild1
 
                 } else {
@@ -128,29 +133,31 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
                     str_write("\nGchildA wait done in: ", STDOUT);
                     str_iwriteln(getpid(), STDOUT);
 
-                    // TODO: if (exitcode) ...
+                    if (exitcode != 0) {
+                        write_err("ERROR: 'tee' fork exited abnormally.");
+                        return exitcode;
+                    }
                     
                     gchildB_pid = fork();
                     if (gchildB_pid == 0) {
-                        /* In grandchild B -------------------- */
+                        /* In grandchild B ---------- */
                         str_write("\nGchildB: ", STDOUT);
                         str_iwriteln(getpid(), STDOUT);
                         close(out_fd);                  // close unused
                         close(gchild_pipe[1]);          // close unused
                         dup2(gchild_pipe[0], STDIN);    // redirect stdin
-
-                        // TODO:
-                        // if more cmds, redirect stdout
-                        exit(0);
-                        // execvp(cmd2->exe, cmd2->args);
-                        exit(-1);
+                        exit(execvp(cmd2->exe, cmd2->args));    // do cmd
                     }
 
-                    /* Still in Child 2, after GChilds -------- */ 
+                    /* Still in Child 2, after GChild A &B --- */ 
                     waitpid(gchildB_pid, &exitcode, 0);
                     str_write("\nGchildB wait done in: ", STDOUT);  // debug
                     str_iwriteln(getpid(), STDOUT);                 // debug
-                    exit(0);  // exit child 2
+
+                    if (exitcode != 0)
+                        write_err("ERROR: Invalid cmd2, or cmd2 returned error.");
+
+                    exit(exitcode);  // exit child 2
                 }
 
             } else {
@@ -161,8 +168,13 @@ int fork_and_pipe(command *cmds, int cmd_count, int out_fd) {
 
                 close(top_pipe[0]);
                 close(top_pipe[1]);
-                // TODO: continue;
-                return i;  // debug
+
+                if (exitcode != 0) {
+                    return(exitcode);
+                }
+
+                continue;
+                // return i;  // debug
             }
         }
     }
@@ -176,24 +188,6 @@ int main(int argc, char **argv) {
     char *outfile_name = argv[1];
     int cmd_count = 0;
     int out_fd;
-
-    // debug
-    argc = 14;
-    // argc= 9;
-    argv[1] = "allfiles";
-    argv[2] = "[";
-    argv[3] = "echo";
-    argv[4] = "one";
-    argv[5] = "]";
-    argv[6] = "[";
-    argv[7] = "echo";
-    argv[8] = "two";
-    argv[9] = "]";
-    argv[10] = "[";
-    argv[11] = "echo";
-    argv[12] = "three";
-    argv[13] = "]";
-    outfile_name = argv[1];
 
     // Parse cmd line args for commands to be run
     commands = malloc(MAX_LEN * sizeof(command));
