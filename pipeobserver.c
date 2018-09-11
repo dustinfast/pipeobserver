@@ -37,6 +37,7 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
 void do_pipeconn(int mode, int *pipe_fds, int old_in, int old_out);
 int fork_and_pipe(command *cmds, int cmd_count, int out_fd);
 
+
 // For debug ouput
 void debugcmd(char *label, command cmd) {
     str_write("\n", STDOUT);
@@ -59,12 +60,12 @@ int main(int argc, char **argv) {
     cmd_count = 0;
     int i = 2;
 
-    // Form commands, as parsed by the recursive parser
+    // Get commands, as parsed by the recursive parser
     while (i < argc && cmd_count < MAX_CMDS) {
         command cmd;
         i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
 
-        // Break on bad cmd format encountered by parser
+        // Break on bad cmd format encountered in parser
         if (i < 0) 
             break;
         commands[cmd_count++] = cmd;
@@ -121,7 +122,7 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             else 
                 cmd->args[j++] = arr_in[i];
 
-            k++;  // Incr bracket depth
+            k++;  // Increment bracket depth
             break;
         
         case ']':
@@ -138,26 +139,20 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             // Else, it's an arg
             cmd->args[j++] = arr_in[i];
             
-            k--;  // Decr bracket depth
+            k--;  // Decrement bracket depth
             break;
 
         default:
             // If executable name flag set, write cmd.cmd and unset flag.
             if (z) {
                 str_cpy(arr_in[i], cmd->exe, str_len(arr_in[i]));
-                cmd->args[j++] = arr_in[i];  // First arg is always cmd name
+                cmd->args[j++] = arr_in[i];  // First arg always cmd name (j=0)
                 z = 0;
 
             // Else, its an arg.
             } else {
                 cmd->args[j++] = arr_in[i];
             }
-    }
-
-    // Check for unexpected states
-    if (k < 0 || (i > in_len && k > 0)) {
-        write_err("DEBUG: Unexcepted error in get_nextcmd.");
-        return -1;
     }
 
     // Increase curr str index and recurse
