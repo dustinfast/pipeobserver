@@ -1,0 +1,1 @@
+gcc pipeobserver.c; ./a.out allfiles [ ps aux ] [ grep SCREEN ]; cat allfiles
