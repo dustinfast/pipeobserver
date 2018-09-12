@@ -52,14 +52,16 @@ int main(int argc, char **argv) {
     int outfile_fd;
     int state = 0;
 
-    // Get commands, as parsed by the recursive parser
+    // Get up to MAX_CMDS commands, as parsed by the recursive parser
     int i = 2;
     while (i < argc && cmd_count < MAX_CMDS) {
         i = get_nextcmd(argv, argc, &commands[cmd_count++], i, 0, 0, 0);
 
         // Break on bad cmd format encountered in parser
-        if (i < 0) 
+        if (i < 0) {
+            cmd_count = -1;
             break;
+        }
     }
 
     // Ensure at least two valid commands
@@ -109,7 +111,7 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
                 
             k++;
             break;
-        
+        // [ [ ls -lat ] [ wc -l ];
         case ']':
             // If outter closing bracket, null terminate args & return success.
             if (k == 1) {
@@ -141,8 +143,12 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             cmd->args[j++] = arr_in[i];
     }
 
-    // Increase curr index of arr_in and recurse
-    get_nextcmd(arr_in, in_len, cmd, ++i, j, k, z);
+    // If still in bounds of arr_in for next iteration, recurse, else err.
+    i++;
+    if (i >= in_len)
+        return -1;
+    else  
+        get_nextcmd(arr_in, in_len, cmd, i, j, k, z);
 }
 
 /* -- fork_and_pipe -- */
