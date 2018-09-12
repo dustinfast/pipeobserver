@@ -44,9 +44,10 @@ int main(int argc, char **argv) {
     char *outfile_name = argv[1];
     int cmd_count = 0;
     int outfile_fd;
+    int state = 0;
 
     // Parse cmd line args for commands to be run
-    commands = malloc(2 * sizeof(command));
+    commands = malloc(MAX_LEN * sizeof(command));
     cmd_count = 0;
     int i = 2;
 
@@ -64,28 +65,27 @@ int main(int argc, char **argv) {
     // Ensure at least two valid commands
     if (cmd_count < 2) {
         write_err("ERROR: Too few, or malformed arguments received.");
-        free(commands);
-        return -1;
-    }
-
-    // Open the output file
-    outfile_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
-    if (outfile_fd < 0) {
-        write_err("ERROR: Failed to open output file.");
-        free(commands);
-        return -1;
+        state = -1;
+    } else {
+        // Open the output file
+        outfile_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
+        if (outfile_fd < 0) {
+            write_err("ERROR: Failed to open output file.");
+            state = -1;
+        }
     }
 
     // Do forking and piping of data
-    fork_and_pipe(commands, cmd_count, outfile_fd); 
+    if (state != -1)
+        fork_and_pipe(commands, cmd_count, outfile_fd); 
 
     // Cleanup
-    close(outfile_fd);
     free(commands);
+    close(outfile_fd);
 
     // TODO: Verify no mem leak
 
-    return 0;
+    return state;
 }
 
 
