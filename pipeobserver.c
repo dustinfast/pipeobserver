@@ -1,20 +1,20 @@
-// An application that pipes the output of command 1 to command 2 and stores
-// a copy of the piped data to OUTFILE.
-// Usage: ./pipeobserver OUTFILE [ command1 ] [ command2 ]
-// Example: ./pipeobserver OUTFILE [ ps aux ] [ grep SCREEN ]
-// Example: ./pipobserver OUTFILE [ echo [ Hello ] ] [ wc -l ]
-// NOTE: Brackets in cmd line args must be matched. Ex: "[ ls ] ]" will fail.
+// This application is a replacement for the "tee" command, implemented 
+// using syscalls only. It pipes the output of COMMAND1 to the input of
+// COMMAND2, storing a copy of the piped data to the file named by OUTFILE.
 //
-// Author: Dustin Fast, dustin.fast@hotmail.com, 2018
+// Usage: ./pipeobserver OUTFILE [ COMMAND1 ARGS1 ] [ COMMAND2 ARGS2 ]
+//    Ex: ./pipeobserver OUTFILE [ ps ] [ grep pts ]
+//    Ex: ./pipeobserver OUTFILE [ ps aux ] [ wc ]
+//    Ex: ./pipobserver OUTFILE [ echo [ Hello World ] ] [ wc -w ]
+//    NOTE: All brackets must be matched. Ex: "[ wc ] ]" will fail.
+//
+// Author: Dustin Fast, dustin.fast@outlook.com, 2018
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
-#include <sys/types.h>
-
-#include "dstring.h"            // String function lib, uses syscalls only.
 
 #define MAX_LEN (8192)          // Denotes max number of args per command
 #define MAX_CMDS (2)            // Denotes max number of commands
@@ -24,53 +24,53 @@
 #define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ]")
 
 
-// Abstraction of a command having up to MAX_LEN cmd line args
+// Abstraction of a command, with up to MAX_LEN ARGS
 typedef struct cmd_obj {
     char exe[MAX_LEN];
     char *args[MAX_LEN];
 } command;
 
 
-// Function defs
-void write_err(char *arr);
+// Main helpers
 int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, int z);
 void do_pipeconn(int mode, int *pipe_fds, int old_in, int old_out);
 int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd);
+void write_err(char *arr);
+
+// String helpers
+void str_cpy(char *arr_in, char *arr_out, int count);
+int str_writeln(char *arr, int fd);
+int str_write(char *arr, int fd);
+size_t str_len(char *arr);
 
 
-// Main
+/* -- Main -- */
 int main(int argc, char **argv) {
-    command *commands;
+    command commands[MAX_CMDS];
     char *outfile_name = argv[1];
     int cmd_count = 0;
     int outfile_fd;
     int state = 0;
 
-    // Parse cmd line args for commands to be run
-    commands = malloc(MAX_LEN * sizeof(command));
-    cmd_count = 0;
-    int i = 2;
-
     // Get commands, as parsed by the recursive parser
+    int i = 2;
     while (i < argc && cmd_count < MAX_CMDS) {
-        command *cmd = malloc(sizeof(command));
-        i = get_nextcmd(argv, argc, cmd, i, 0, 0, 0);
+        i = get_nextcmd(argv, argc, &commands[cmd_count++], i, 0, 0, 0);
 
         // Break on bad cmd format encountered in parser
         if (i < 0) 
             break;
-        commands[cmd_count++] = *cmd;
     }
 
     // Ensure at least two valid commands
     if (cmd_count < 2) {
-        write_err("ERROR: Too few, or malformed arguments received.");
+        write_err("Too few, or malformed arguments received.");
         state = -1;
     } else {
         // Open the output file
         outfile_fd = open(outfile_name, O_CREAT | O_WRONLY | O_TRUNC, 00644);
         if (outfile_fd < 0) {
-            write_err("ERROR: Failed to open output file.");
+            write_err("Failed to open OUTFILE.");
             state = -1;
         }
     }
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
         fork_and_pipe(commands, cmd_count, outfile_fd); 
 
     // Cleanup
-    free(commands);
+    // free(commands[0]);
     close(outfile_fd);
 
     // TODO: Verify no mem leak
@@ -89,7 +89,8 @@ int main(int argc, char **argv) {
 }
 
 
-// Recursively parses char** of form { '[', 'EXE', 'ARGS', ']', ... } and
+/* -- get_nextcmd -- */
+// Recursively parses **arr_in of form { '[', 'EXE', 'ARGS', ']', ... } and
 // populates the given cmd with the next EXE and ARGS, starting at arr_in[i].
 // Vars j, k, and z should initially be passed as 0. in_len denotes len(arr_in).
 // RETURNS: index of the first unprocessed ptr in arr_in, or -1 if parse error.
@@ -105,31 +106,33 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
                 z = 1;
             else 
                 cmd->args[j++] = arr_in[i];
+                
             k++;
             break;
         
         case ']':
-            // If not first open bracket, unmatched bracket error
-            if (k == 0)
-                return -1;
-
-            // If outter closing bracket, null terminate args & return
+            // If outter closing bracket, null terminate args & return success.
             if (k == 1) {
                 cmd->args[j++] = '\0';
-                return ++i;
+                return ++i;     // <----------------------- Recursive base case
             }
 
-            // Else, it's an arg
+            // If not 1st open bracket, mismatched bracket error.
+            if (k <= 0)
+                return -1;
+            
+            //Else, it's an arg.
             cmd->args[j++] = arr_in[i];
             
             k--;
             break;
 
         default:
-            // If executable name flag set, write cmd.cmd and unset flag.
+            // If executable name flag set, write cmd->cmd and unset z flag.
+            // Note that first argument is always exe name, so set that as well.
             if (z) {
                 str_cpy(arr_in[i], cmd->exe, str_len(arr_in[i]));
-                cmd->args[j++] = arr_in[i];  // First arg is cmd name (j=0)
+                cmd->args[j++] = arr_in[i];  // Note: j always be 0 here
                 z = 0;
                 break;
             }
@@ -138,12 +141,12 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
             cmd->args[j++] = arr_in[i];
     }
 
-    // Increase curr str index and recurse
+    // Increase curr index of arr_in and recurse
     get_nextcmd(arr_in, in_len, cmd, ++i, j, k, z);
 }
 
-
-// Pipes output between cmd[0] and cmd[1], which are executed as forks -
+/* -- fork_and_pipe -- */
+// Pipes output between cmd[0] and cmd[1], which are executed as subprocesses.
 // Child 1 runs cmd[0], piping it's stdout to GrandchildA which writes it to
 // OUTFILE before piping it again to GrandchildB for use as cmd[1]'s stdin.
 // Piped data is also copied to the given file desciptor, outfile_fd.
@@ -175,7 +178,7 @@ int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd) {
         close(top_pipe[1]);                     // Done with this end        
         
         if (exitcode != 0) {
-            write_err("ERROR: Invalid cmd1, or cmd1 returned error.");
+            write_err("Invalid cmd1, or cmd1 returned error.");
             return exitcode;
         }
 
@@ -210,7 +213,7 @@ int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd) {
                 waitpid(gchildA_pid, &exitcode, 0);
 
                 if (exitcode != 0) {
-                    write_err("ERROR: 'tee' fork exited abnormally.");
+                    write_err("'tee' fork exited abnormally.");
                     return exitcode;
                 }
                 
@@ -238,9 +241,71 @@ int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd) {
     }
 }
 
-// Prints the given char array and usage info to stderr on their own lines.
+/* -- write_err -- */
+// Writes the given null-terminated string with program usage info to stderr.
 void write_err(char *arr) {
+    str_write("ERROR: ", STDERR);
     str_writeln(arr, STDERR);
-    str_write("Usage: ", STDERR);
+    str_write("TRY: ", STDERR);
     str_writeln(USAGE, STDERR);
+}
+
+
+/* -- str_len -- */
+// Returns the length of the given null-terminated "string".
+size_t str_len(char *arr) {
+    int length = 0;
+    for (char *c = arr; *c != '\0'; c++)
+        length++;
+
+    return length;
+}
+
+
+/* -- str_write -- */
+// Writes the string given by arr to filedescriptor fd.
+// RETURNS: The number of bytes written, or -1 on error.
+int str_write(char *arr, int fd) {
+    size_t curr_write = 0;
+    size_t total_written = 0;
+    size_t char_count = str_len(arr);
+
+    // If bad fd
+    if (fd < 0) {
+        str_write("Invalid file descriptor passed to str_write", STDERR);
+        return -1;
+    }
+
+    // If empty string , do nothing
+    if (!char_count) 
+        return 0;
+
+    // Write string to the given file descriptor (note ptr arith in write()).
+    while (total_written < char_count) {
+        curr_write = write(fd, arr + total_written, char_count - total_written);
+        
+        if (curr_write < 0)
+            return -1; // on error
+        total_written += curr_write;
+    }
+
+    return total_written;
+}
+
+
+/* -- str_writeln -- */
+// Writes the given string to filedescriptor fd, followed by a newline.
+int str_writeln(char *arr, int fd) {
+    str_write(arr, fd);
+    str_write("\n", fd);
+}
+
+
+/* -- str_cpy -- */
+// Copies the given number of bytes from arr_in to arr_out.
+// ASSUMES: arr_out is of sufficient size.
+void str_cpy(char *arr_in, char *arr_out, int count) {
+    for (int i = 0; i < count; i++) {
+            arr_out[i] = arr_in[i];
+    }
 }
