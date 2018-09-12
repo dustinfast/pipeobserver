@@ -52,18 +52,18 @@ int main(int argc, char **argv) {
 
     // Get commands, as parsed by the recursive parser
     while (i < argc && cmd_count < MAX_CMDS) {
-        command cmd;
-        i = get_nextcmd(argv, argc, &cmd, i, 0, 0, 0);
+        command *cmd = malloc(sizeof(command));
+        i = get_nextcmd(argv, argc, cmd, i, 0, 0, 0);
 
         // Break on bad cmd format encountered in parser
         if (i < 0) 
             break;
-        commands[cmd_count++] = cmd;
+        commands[cmd_count++] = *cmd;
     }
 
     // Ensure at least two valid commands
     if (cmd_count < 2) {
-        write_err("ERROR: Too few, or invalid cmd arguments received.");
+        write_err("ERROR: Too few, or malformed arguments received.");
         free(commands);
         return -1;
     }
@@ -100,45 +100,42 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
     // z = denotes next arg is executable name
     switch(*arr_in[i]) {
         case '[':
-            // If first open bracket found, next el is exe name. Set z flag.
+            // If first [, next el is exe, so set z flag. Else its an arg.
             if (k == 0)
                 z = 1;
-
-            // Else, its an arg.
             else 
                 cmd->args[j++] = arr_in[i];
-
-            k++;  // Increment bracket depth
+            k++;
             break;
         
         case ']':
-            // If no first open bracket, unmatched bracket error
+            // If not first open bracket, unmatched bracket error
             if (k == 0)
                 return -1;
 
-            // If at bracket level 1, it's our closing bracket, signaling done.
+            // If outter closing bracket, null terminate args & return
             if (k == 1) {
-                cmd->args[j++] = '\0';  // Null terminate args list, for execvp
+                cmd->args[j++] = '\0';
                 return ++i;
             }
 
             // Else, it's an arg
             cmd->args[j++] = arr_in[i];
             
-            k--;  // Decrement bracket depth
+            k--;
             break;
 
         default:
             // If executable name flag set, write cmd.cmd and unset flag.
             if (z) {
                 str_cpy(arr_in[i], cmd->exe, str_len(arr_in[i]));
-                cmd->args[j++] = arr_in[i];  // First arg always cmd name (j=0)
+                cmd->args[j++] = arr_in[i];  // First arg is cmd name (j=0)
                 z = 0;
+                break;
+            }
 
             // Else, its an arg.
-            } else {
-                cmd->args[j++] = arr_in[i];
-            }
+            cmd->args[j++] = arr_in[i];
     }
 
     // Increase curr str index and recurse
@@ -222,7 +219,14 @@ int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd) {
                     close(outfile_fd);              // close unused
                     close(gchild_pipe[1]);          // close unused
                     dup2(gchild_pipe[0], STDIN);    // redirect stdin
-                    exit(execvp(cmd2->exe, cmd2->args));    // do cmd
+
+                    // str_writeln(cmd2->exe, STDOUT);
+                    // str_writeln(cmd2->args[0], STDOUT);
+                    // str_writeln(cmd2->args[1], STDOUT);
+
+                    execvp(cmd2->exe, cmd2->args);    // do cmd
+                    exit(-1);
+
                 }
                 else { exit(0); }                   // Exit child 2
             }
