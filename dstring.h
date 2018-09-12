@@ -50,7 +50,7 @@ int str_writeln(char *arr, int fd) {
 
 
 // Does integer to string conversion, setting *arr_out to the resuling_string.
-void itoa(int n, char *arr_out, int out_len) {
+void str_itoa(int n, char *arr_out, int out_len) {
     int i = 0;
     int dec_val;
 
@@ -75,7 +75,7 @@ void itoa(int n, char *arr_out, int out_len) {
 // Prints the given interger to the given file descriptor, followed by a newline.
 int str_iwriteln(int n, int fd) {
     char arr[MAX_INT_DIGITS];
-    itoa(n, arr, MAX_INT_DIGITS);
+    str_itoa(n, arr, MAX_INT_DIGITS);
     str_writeln(arr, STDOUT_FILENO);
 }
 
@@ -83,7 +83,7 @@ int str_iwriteln(int n, int fd) {
 // Prints the given interger to the given file descriptor, followed by a newline.
 int str_iwrite(int n, int fd) {
     char arr[MAX_INT_DIGITS];
-    itoa(n, arr, MAX_INT_DIGITS);
+    str_itoa(n, arr, MAX_INT_DIGITS);
     str_write(arr, STDOUT_FILENO);
 }
 
@@ -91,7 +91,6 @@ int str_iwrite(int n, int fd) {
 // Copies the given number of bytes from arr_in to arr_out.
 // Assumes arr_out is of sufficient size.
 void str_cpy(char *arr_in, char *arr_out, int count) {
-    // TODO: Trim mem alloc
     for (int i = 0; i < count; i++) {
             arr_out[i] = arr_in[i];
     }
