@@ -16,11 +16,11 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 
-#define MAX_LEN (8192)          // Denotes max number of args per command
-#define MAX_CMDS (2)            // Denotes max number of commands
-#define STDIN (STDIN_FILENO)    // Time...
-#define STDOUT (STDOUT_FILENO)  // Is...
-#define STDERR (STDERR_FILENO)  // Money.
+#define MAX_CMDS (2)                // Denotes max number of commands
+#define MAX_LEN (8192)              // Denotes max number of args per command
+#define STDIN (fileno(stdin))
+#define STDOUT (fileno(stdout))
+#define STDERR (fileno(stderr))
 #define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ]")
 
 
@@ -98,7 +98,7 @@ int get_nextcmd(char **arr_in, int in_len, command *cmd, int i, int j, int k, in
     // i = curr index of arr_in
     // j = curr index of cmd->args
     // k = denotes open/close bracket depth/level
-    // z = denotes next arg is executable name
+    // z = denotes next element in arr_in is executable name
     switch(*arr_in[i]) {
         case '[':
             // If first [, next el is exe, so set z flag. Else its an arg.
