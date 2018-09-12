@@ -166,7 +166,8 @@ int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd) {
         close(outfile_fd);                      // close unused
         close(top_pipe[0]);                     // close unused         
         dup2(top_pipe[1], STDOUT);              // redirect stdout
-        exit(execvp(cmd1->exe, cmd1->args));    // do cmd
+        execvp(cmd1->exe, cmd1->args);          // do cmd
+        exit(-1);                               // if here, error w/cmd1
 
     } else {
         /* In Parent, after Child 1 fork -------------------------------- */            
@@ -219,13 +220,8 @@ int fork_and_pipe(command *cmds, int cmd_count, int outfile_fd) {
                     close(outfile_fd);              // close unused
                     close(gchild_pipe[1]);          // close unused
                     dup2(gchild_pipe[0], STDIN);    // redirect stdin
-
-                    // str_writeln(cmd2->exe, STDOUT);
-                    // str_writeln(cmd2->args[0], STDOUT);
-                    // str_writeln(cmd2->args[1], STDOUT);
-
-                    execvp(cmd2->exe, cmd2->args);    // do cmd
-                    exit(-1);
+                    execvp(cmd2->exe, cmd2->args);  // do cmd
+                    exit(-1);                       // if here, error w/cmd2
 
                 }
                 else { exit(0); }                   // Exit child 2
