@@ -21,7 +21,7 @@
 #define STDIN (STDIN_FILENO)    // Time...
 #define STDOUT (STDOUT_FILENO)  // Is...
 #define STDERR (STDERR_FILENO)  // Money.
-#define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ] ...")
+#define USAGE ("./pipeobserver OUTFILE [ EXE ARGS ] [ EXE ARGS ]")
 
 
 // Abstraction of a command having up to MAX_LEN cmd line args
@@ -76,13 +76,10 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    int results = fork_and_pipe(commands, cmd_count, outfile_fd);
-    if(results > -1) {
-        str_write("Success!\nUse 'cat ", STDOUT);
-        str_write(outfile_name, STDOUT);
-        str_writeln("' to view piped data.", STDOUT);
-    } // else, error will have been displayed by fork_and_pipe.
+    // Do forking and piping of data
+    fork_and_pipe(commands, cmd_count, outfile_fd); 
 
+    // Cleanup
     close(outfile_fd);
     free(commands);
 
