@@ -1,7 +1,7 @@
 # Pipe Observer
 
-This application is a replacement for the GNU "tee" utility, implemented 
-using POSIX syscalls only. It pipes the output of COMMAND1 to the input of
+This application is a replacement for the GNU "tee" utility. Implemented 
+using POSIX syscalls only, it pipes the output of COMMAND1 to the input of
 COMMAND2, writing a copy of the piped data to the file named by OUTFILE.
 
 ## Usage
@@ -18,7 +18,7 @@ Note: All square-brackets must be well-formed. A well-formed bracket is surround
 
 ## Design Decisions
 
-The application specification did not require handling of more than two commands. However, the design was made with scalability in mind, therefore pipeobserver will handle an arbitrary number of commands with the following modifications to pipeobserver.c:
+The original application specification did not require handling of more than two commands. However, the implementation was made with scalability in mind, therefore pipeobserver will handle an arbitrary number of commands with the following modifications to pipeobserver.c:
 
 1. Adjust MAX_CMDS for the maximum number of commands desired.
 2. Encapsulate fork_and_pipe()'s forking code-block inside a `for (int i = 0; i < cmd_count; i++)` block.
