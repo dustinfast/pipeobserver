@@ -16,7 +16,7 @@ For example:
 Note: All square-brackets must be well-formed. A well-formed bracket is surrounded by whitespace and has a matching well-formed open/close bracket. Any brackets contained in ARGS are passed to COMMAND as arguments, however, they must also be well-formed. For example, the following case contains a malformed bracket in the first COMMAND block and will generate an error:  
 `./pipeobserver outfile.dat [ echo Unmatched bracket: ] ] [ wc -w ]`
 
-## Design Decisions
+## Scalability
 
 The original application specification did not require handling of more than two commands. However, the implementation was made with scalability in mind, therefore pipeobserver will handle an arbitrary number of commands with the following modifications to pipeobserver.c:
 
